@@ -102,6 +102,7 @@ This mod adds two-way radios with different upgrades.
 ### Translators :
 + Russian: **Heimdallr-1**
 + German: **Kampftroll**
++ Mexican Spanish: **TheLegendofSaram**
 
 ### SFX :
 + **JustinBW**
