@@ -1,4 +1,4 @@
-package fr.flaton.walkietalkie;
+package fr.flaton.walkietalkie.radio;
 
 import uk.me.berndporr.iirj.Butterworth;
 
@@ -6,12 +6,12 @@ public class RadioFilter {
 
     private final static int SAMPLE_RATE = 48000;
 
-    private final Butterworth HIGHPASS = new Butterworth();
+    //private final Butterworth HIGHPASS = new Butterworth();
     private final Butterworth BANDPASS = new Butterworth();
 
     public RadioFilter() {
-        HIGHPASS.highPass(4, SAMPLE_RATE, 2000);
-        BANDPASS.bandPass(4, SAMPLE_RATE, 50, 2600);
+        //HIGHPASS.highPass(4, SAMPLE_RATE, 2000);
+        BANDPASS.bandPass(4, SAMPLE_RATE, 700, 4000);
     }
 
     public short[] apply(short[] rawData) {
@@ -20,9 +20,9 @@ public class RadioFilter {
         for (int i = 0; i < audioData.length; i++) {
             doubleData[i] = audioData[i];
 
-            doubleData[i] = HIGHPASS.filter(doubleData[i]);
-            //doubleData[i] = BANDPASS.filter(doubleData[i]);
-            doubleData[i] = volume(doubleData[i], 10d);
+            //doubleData[i] = HIGHPASS.filter(doubleData[i]);
+            doubleData[i] = BANDPASS.filter(doubleData[i]);
+            //doubleData[i] = volume(doubleData[i], 2d);
         }
 
         for (int i = 0; i < doubleData.length; i++) {
@@ -32,6 +32,6 @@ public class RadioFilter {
     }
 
     private double volume(double audio, double level) {
-        return audio * level;
+        return Math.min(audio * level, Short.MAX_VALUE);
     }
 }

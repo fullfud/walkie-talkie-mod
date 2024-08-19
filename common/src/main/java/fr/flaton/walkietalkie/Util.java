@@ -2,15 +2,20 @@ package fr.flaton.walkietalkie;
 
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
+import fr.flaton.walkietalkie.radio.Canal;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class Util {
 
@@ -29,6 +34,9 @@ public class Util {
     }
 
     public static boolean canBroadcastToReceiver(World senderWorld, World receiverWorld, Vec3d senderPos, Vec3d receiverPos, int range) {
+        if (!ModConfig.crossDimensionsEnabled && !receiverWorld.getDimension().equals(senderWorld.getDimension()))
+            return false;
+
         double senderCoordinateScale = senderWorld.getDimension().coordinateScale();
         double receiverCoordinateScale = receiverWorld.getDimension().coordinateScale();
 
@@ -37,12 +45,12 @@ public class Util {
         return senderPos.isInRange(receiverPos, appliedRange);
     }
 
-    public static ArrayList<ItemStack> getWalkieTalkies(PlayerEntity player) {
+    public static List<ItemStack> getWalkieTalkies(PlayerEntity player) {
 
-        ArrayList<ItemStack> itemStacks = new ArrayList<>();
+        List<ItemStack> itemStacks = new ArrayList<>();
 
         PlayerInventory playerInventory = player.getInventory();
-        ArrayList<ItemStack> inventory = new ArrayList<>();
+        List<ItemStack> inventory = new ArrayList<>();
         for (int i = 0; i < 9; i++) {
             inventory.add(playerInventory.main.get(i));
         }
@@ -63,7 +71,7 @@ public class Util {
     }
 
     public static @Nullable ItemStack getOptimalWalkieTalkieRange(PlayerEntity player) {
-        ArrayList<ItemStack> itemStacks = getWalkieTalkies(player);
+        List<ItemStack> itemStacks = getWalkieTalkies(player);
         if (itemStacks.isEmpty()) {
             return null;
         }
@@ -90,6 +98,20 @@ public class Util {
             return stack;
         }
         return null;
+    }
+
+    public static List<ItemStack> getActivatedWalkieTalkies(ServerPlayerEntity player) {
+        List<ItemStack> walkieTalkies = getWalkieTalkies(player);
+        walkieTalkies.removeIf(walkieTalkie -> !WalkieTalkieItem.isActivate(walkieTalkie));
+        return walkieTalkies;
+    }
+
+    public static Set<Canal> getCanals(ServerPlayerEntity player) {
+        Set<Canal> canals = new HashSet<>();
+        for (ItemStack itemStack : getActivatedWalkieTalkies(player)) {
+            canals.add(Canal.getOrCreate(WalkieTalkieItem.getCanal(itemStack)));
+        }
+        return canals;
     }
 
     public static int loop(int value, int min, int max) {

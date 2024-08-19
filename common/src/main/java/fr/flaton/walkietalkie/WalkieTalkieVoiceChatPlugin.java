@@ -6,6 +6,7 @@ import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
 import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import de.maxhenkel.voicechat.api.opus.OpusEncoder;
+import fr.flaton.walkietalkie.radio.SoundManager;
 import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
@@ -26,13 +27,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     public static OpusEncoder encoder;
     public static OpusDecoder decoder;
 
-    private ExecutorService executorService;
+    private final ExecutorService executorService;
 
     public WalkieTalkieVoiceChatPlugin() {
         executorService = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable);
             thread.setName("WalkieTalkieAudioThread");
-            thread.setUncaughtExceptionHandler((t, e) -> Constants.LOGGER.error("Error in WalkieTalkieAudioThread: " + e));
+            thread.setUncaughtExceptionHandler((t, e) -> Constants.LOGGER.error("Error in WalkieTalkieAudioThread: ", e));
             thread.setDaemon(true);
             return thread;
         });
@@ -45,8 +46,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     @Override
     public void registerEvents(EventRegistration registration) {
-        registration.registerEvent(VoicechatServerStartedEvent.class, this::onServerStarted);
         registration.registerEvent(MicrophonePacketEvent.class, micPacket -> executorService.submit(() -> SoundManager.getInstance().onMicPacket(micPacket)));
+        registration.registerEvent(VoicechatServerStartedEvent.class, this::onServerStarted);
     }
 
     private void onServerStarted(VoicechatServerStartedEvent event) {

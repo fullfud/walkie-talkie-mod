@@ -1,11 +1,7 @@
 package fr.flaton.walkietalkie.block.entity;
 
-import de.maxhenkel.voicechat.api.Position;
-import de.maxhenkel.voicechat.api.audiochannel.LocationalAudioChannel;
-import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import fr.flaton.walkietalkie.Util;
-import fr.flaton.walkietalkie.WalkieTalkieVoiceChatPlugin;
-import fr.flaton.walkietalkie.config.ModConfig;
+import fr.flaton.walkietalkie.radio.Canal;
 import fr.flaton.walkietalkie.screen.SpeakerScreenHandler;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -18,31 +14,28 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 
 public class SpeakerBlockEntity extends BlockEntity implements NamedScreenHandlerFactory {
 
-    private static final List<SpeakerBlockEntity> speakerBlockEntities = new ArrayList<>();
+    private static final Map<UUID, SpeakerBlockEntity> SPEAKERS = new HashMap<>();
 
     public static final String NBT_KEY_ACTIVATE = "speaker.activate";
     public static final String NBT_KEY_CANAL = "speaker.canal";
 
     protected final PropertyDelegate propertyDelegate;
 
-    boolean activated;
-    int canal = 1;
+    private boolean activated;
+    private int canal = 1;
 
-    private final UUID channelId;
-    private LocationalAudioChannel channel = null;
+    private final UUID uuid;
 
     public SpeakerBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.SPEAKER.get(), pos, state);
-        speakerBlockEntities.add(this);
 
-        channelId = UUID.randomUUID();
+        uuid = UUID.randomUUID();
+        SPEAKERS.put(uuid, this);
 
         this.propertyDelegate = new PropertyDelegate() {
             @Override
@@ -100,53 +93,6 @@ public class SpeakerBlockEntity extends BlockEntity implements NamedScreenHandle
         return super.onSyncedBlockEvent(type, data);
     }
 
-    public static List<SpeakerBlockEntity> getSpeakersActivatedInRange(int canal, World world, Vec3d pos, int range) {
-        speakerBlockEntities.removeIf(BlockEntity::isRemoved);
-
-        List<SpeakerBlockEntity> list = new ArrayList<>();
-
-        for (SpeakerBlockEntity speaker : speakerBlockEntities) {
-
-            if (!speaker.hasWorld()) {
-                continue;
-            }
-
-            if (!ModConfig.crossDimensionsEnabled
-                    && !world.getRegistryKey().getRegistry().equals(speaker.getWorld().getRegistryKey().getRegistry())) {
-                continue;
-            }
-
-            if (!speaker.canBroadcastToSpeaker(world, pos, speaker, range)) {
-                continue;
-            }
-
-            if (speaker.activated) {
-                if (speaker.canal == canal) {
-                    list.add(speaker);
-                }
-            }
-        }
-
-        return list;
-    }
-
-    public void playSound(MicrophonePacketEvent event) {
-        Position pos = WalkieTalkieVoiceChatPlugin.voiceChatAPI.createPosition(this.getPos().getX(), this.getPos().getY(), this.getPos().getZ());
-
-        if (this.channel == null) {
-            this.channel = WalkieTalkieVoiceChatPlugin.voiceChatAPI.createLocationalAudioChannel(this.channelId, WalkieTalkieVoiceChatPlugin.voiceChatAPI.fromServerLevel(this.world), pos);
-            if (this.channel == null) {
-                return;
-            }
-            this.channel.setCategory(WalkieTalkieVoiceChatPlugin.SPEAKER_CATEGORY);
-            this.channel.setDistance(ModConfig.speakerDistance + 1F);
-            if (!ModConfig.voiceDuplication) {
-                this.channel.setFilter(serverPlayer -> !serverPlayer.getEntity().equals(event.getSenderConnection().getPlayer().getEntity()));
-            }
-        }
-        this.channel.send(event.getPacket().getOpusEncodedData());
-    }
-
     private boolean canBroadcastToSpeaker(World senderWorld, Vec3d senderPos, SpeakerBlockEntity speaker, int range) {
         World receiverWorld = speaker.getWorld();
 
@@ -155,5 +101,31 @@ public class SpeakerBlockEntity extends BlockEntity implements NamedScreenHandle
         }
 
         return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPos, speaker.pos.toCenterPos(), range);
+    }
+
+    public UUID getUuid() {
+        return uuid;
+    }
+
+    public static List<SpeakerBlockEntity> getActiveSpeakers() {
+        Iterator<Map.Entry<UUID, SpeakerBlockEntity>> iterator = SPEAKERS.entrySet().iterator();
+        List<SpeakerBlockEntity> activeSpeakers = new ArrayList<>();
+
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, SpeakerBlockEntity> entry = iterator.next();
+            SpeakerBlockEntity speakerBlockEntity = entry.getValue();
+
+            if (speakerBlockEntity.isRemoved()) {
+                iterator.remove();
+            } else if (speakerBlockEntity.activated) {
+                activeSpeakers.add(speakerBlockEntity);
+            }
+        }
+
+        return activeSpeakers;
+    }
+
+    public Set<Canal> getCanal() {
+        return Set.of(Canal.getOrCreate(canal));
     }
 }

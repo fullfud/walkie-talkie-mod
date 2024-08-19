@@ -1,10 +1,12 @@
 package fr.flaton.walkietalkie;
 
+import dev.architectury.event.events.common.TickEvent;
 import fr.flaton.walkietalkie.block.ModBlocks;
 import fr.flaton.walkietalkie.block.entity.ModBlockEntities;
 import fr.flaton.walkietalkie.item.ModItemGroup;
 import fr.flaton.walkietalkie.item.ModItems;
 import fr.flaton.walkietalkie.network.ModMessages;
+import fr.flaton.walkietalkie.radio.SoundManager;
 import fr.flaton.walkietalkie.screen.ModScreenHandlers;
 
 public class WalkieTalkie {
@@ -20,5 +22,6 @@ public class WalkieTalkie {
 		ModMessages.registerC2SPackets();
 
 		ModSoundEvents.register();
+		TickEvent.SERVER_POST.register(SoundManager::serverTick);
 	}
 }

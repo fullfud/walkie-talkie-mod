@@ -84,7 +84,7 @@ public class WalkieTalkieItem extends Item {
     }
 
     public static void setCanal(ItemStack stack, int canal) {
-        stack.getNbt().putInt(NBT_KEY_ACTIVATE, canal);
+        stack.getNbt().putInt(NBT_KEY_CANAL, canal);
     }
 
     public static void setActivate(ItemStack stack, boolean activate) {
@@ -92,7 +92,7 @@ public class WalkieTalkieItem extends Item {
     }
 
     public static void setMute(ItemStack stack, boolean mute) {
-        stack.getNbt().putBoolean(NBT_KEY_ACTIVATE, mute);
+        stack.getNbt().putBoolean(NBT_KEY_MUTE, mute);
     }
 
 
