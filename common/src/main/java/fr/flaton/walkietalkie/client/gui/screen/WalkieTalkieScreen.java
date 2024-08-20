@@ -124,6 +124,16 @@ public class WalkieTalkieScreen extends Screen {
         return instance;
     }
 
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        this.setDragging(false);
+        if (this.canalSlider.isSelected()) {
+            this.canalSlider.mouseReleased(mouseX, mouseY, button);
+            return true;
+        }
+        return this.hoveredElement(mouseX, mouseY).filter(element -> element.mouseReleased(mouseX, mouseY, button)).isPresent();
+    }
+
     class WTCanalSlider extends CanalSlider {
 
         public WTCanalSlider(int x, int y, int width, int height, Text text) {

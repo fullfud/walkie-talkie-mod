@@ -28,14 +28,12 @@ public class Member {
     private World world;
     private final Set<Canal> canals = new HashSet<>();
 
-    private boolean listening = false;
     private short volume = 0;
 
     private final OpusDecoder decoder;
     private final List<short[]> packetBuffer = new ArrayList<>();
     private AudioPlayer audioPlayer;
     private AudioChannel audioChannel;
-    private final RadioFilter filter = new RadioFilter();
 
     public static void serverTick(MinecraftServer server) {
         List<ServerPlayerEntity> playerList = server.getPlayerManager().getPlayerList();
@@ -150,15 +148,13 @@ public class Member {
     private short[] getAudio() {
         short[] audio = getCombinedAudio();
         if (audio == null) {
-            listening = false;
             volume = 0;
             audioPlayer.stopPlaying();
             audioPlayer = null;
             return null;
         }
-        listening = true;
         volume = getVolume(audio);
-        return filter.apply(audio);
+        return audio;
     }
 
     private short getVolume(short[] audio) {
@@ -196,7 +192,7 @@ public class Member {
     }
 
     public boolean isListening() {
-        return listening;
+        return volume != 0;
     }
 
     public short getVolume() {
