@@ -28,6 +28,9 @@ public class Member {
     private World world;
     private final Set<Canal> canals = new HashSet<>();
 
+    private boolean listening = false;
+    private short volume = 0;
+
     private final OpusDecoder decoder;
     private final List<short[]> packetBuffer = new ArrayList<>();
     private AudioPlayer audioPlayer;
@@ -147,11 +150,25 @@ public class Member {
     private short[] getAudio() {
         short[] audio = getCombinedAudio();
         if (audio == null) {
+            listening = false;
+            volume = 0;
             audioPlayer.stopPlaying();
             audioPlayer = null;
             return null;
         }
+        listening = true;
+        volume = getVolume(audio);
         return filter.apply(audio);
+    }
+
+    private short getVolume(short[] audio) {
+        short max = 0;
+        for (short num : audio) {
+            if (num > max) {
+                max = num; // Mise à jour du maximum
+            }
+        }
+        return max;
     }
 
     public short[] getCombinedAudio() {
@@ -176,5 +193,13 @@ public class Member {
         }
         packetBuffer.clear();
         return result;
+    }
+
+    public boolean isListening() {
+        return listening;
+    }
+
+    public short getVolume() {
+        return volume;
     }
 }

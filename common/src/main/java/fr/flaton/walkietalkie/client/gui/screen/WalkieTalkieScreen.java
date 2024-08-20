@@ -65,7 +65,7 @@ public class WalkieTalkieScreen extends Screen {
         muteButton = new ToggleImageButton(guiLeft + 8, guiTop + ySize - 8 - 20, MUTE_TEXTURE, button -> sendButton(1, !mute), mute);
         this.addDrawableChild(muteButton);
 
-        activateButton = new ToggleImageButton(guiLeft + 28, guiTop + ySize - 26, ACTIVATE_TEXTURE, button -> sendButton(0, !activate), activate);
+        activateButton = new ToggleImageButton(guiLeft + 30, guiTop + ySize - 28, ACTIVATE_TEXTURE, button -> sendButton(0, !activate), activate);
         this.addDrawableChild(activateButton);
 
         canalSlider = this.addDrawableChild(new WTCanalSlider(this.width / 2 - 70, guiTop + 20, 140, 20, Text.empty()));
