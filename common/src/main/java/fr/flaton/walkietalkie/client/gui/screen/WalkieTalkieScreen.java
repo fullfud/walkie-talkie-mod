@@ -2,7 +2,9 @@ package fr.flaton.walkietalkie.client.gui.screen;
 
 import dev.architectury.networking.NetworkManager;
 import fr.flaton.walkietalkie.Constants;
+import fr.flaton.walkietalkie.client.gui.widget.CanalSlider;
 import fr.flaton.walkietalkie.client.gui.widget.ToggleImageButton;
+import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
 import fr.flaton.walkietalkie.network.ModMessages;
 import io.netty.buffer.Unpooled;
@@ -27,10 +29,16 @@ public class WalkieTalkieScreen extends Screen {
     private int guiTop;
 
     private final ItemStack stack;
+    private boolean mute;
+    private boolean activate;
+    private int canal;
 
-    private ToggleImageButton mute;
-    private ToggleImageButton activate;
-    private Text canal;
+    private ToggleImageButton muteButton;
+    private ToggleImageButton activateButton;
+
+    private CanalSlider canalSlider;
+    private ButtonWidget canalAddButton;
+    private ButtonWidget canalRemoveButton;
 
     private static final Identifier BG_TEXTURE = new Identifier(Constants.MOD_ID, "textures/gui/gui_walkietalkie.png");
     private static final Identifier MUTE_TEXTURE = new Identifier("voicechat", "textures/icons/microphone_button.png");
@@ -41,6 +49,10 @@ public class WalkieTalkieScreen extends Screen {
         instance = this;
         this.stack = stack;
 
+        mute = WalkieTalkieItem.isMute(stack);
+        activate = WalkieTalkieItem.isActivate(stack);
+        canal = WalkieTalkieItem.getCanal(stack);
+
         MinecraftClient.getInstance().setScreen(this);
     }
 
@@ -50,26 +62,17 @@ public class WalkieTalkieScreen extends Screen {
         this.guiLeft = (this.width - xSize) / 2;
         this.guiTop = (this.height - ySize) / 2;
 
-        mute = new ToggleImageButton(guiLeft + 6, guiTop + ySize - 6 - 20, MUTE_TEXTURE, button -> sendUpdateWalkieTalkie(2, false), WalkieTalkieItem.isMute(stack));
-        this.addDrawableChild(mute);
+        muteButton = new ToggleImageButton(guiLeft + 8, guiTop + ySize - 8 - 20, MUTE_TEXTURE, button -> sendButton(1, !mute), mute);
+        this.addDrawableChild(muteButton);
 
-        activate = new ToggleImageButton(guiLeft + 28, guiTop + ySize - 26, ACTIVATE_TEXTURE, button -> sendUpdateWalkieTalkie(0, false), WalkieTalkieItem.isActivate(stack));
-        this.addDrawableChild(activate);
+        activateButton = new ToggleImageButton(guiLeft + 28, guiTop + ySize - 26, ACTIVATE_TEXTURE, button -> sendButton(0, !activate), activate);
+        this.addDrawableChild(activateButton);
 
+        canalSlider = this.addDrawableChild(new WTCanalSlider(this.width / 2 - 70, guiTop + 20, 140, 20, Text.empty()));
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> sendUpdateWalkieTalkie(1, true)).dimensions(this.width / 2 - 10 + 40, guiTop + 20, 20, 20).build());
+        canalAddButton = this.addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> sendCanal(canal + 1)).dimensions(this.width / 2 - 10 + 80, guiTop + 20, 20, 20).build());
+        canalRemoveButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> sendCanal(canal - 1)).dimensions(this.width / 2 - 10 - 80, guiTop + 20, 20, 20).build());
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> sendUpdateWalkieTalkie(1, false)).dimensions(this.width / 2 - 10 - 40, guiTop + 20, 20, 20).build());
-
-        canal = Text.literal(String.valueOf(WalkieTalkieItem.getCanal(stack)));
-
-    }
-
-    private void sendUpdateWalkieTalkie(int index, boolean status) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        buf.writeInt(index);
-        buf.writeBoolean(status);
-        NetworkManager.sendToServer(ModMessages.UPDATE_WALKIETALKIE_C2S, buf);
     }
 
     @Override
@@ -83,21 +86,55 @@ public class WalkieTalkieScreen extends Screen {
         this.renderBackground(context, mouseX, mouseY, delta);
         super.render(context, mouseX, mouseY, delta);
         drawCenteredText(context, this.textRenderer, this.title, this.width / 2, guiTop + 7, 4210752);
-        drawCenteredText(context, this.textRenderer, this.canal, this.width / 2, guiTop + 26, 4210752);
     }
 
     protected void drawCenteredText(DrawContext context, TextRenderer textRenderer, Text text, int centerX, int y, int color) {
         context.drawText(textRenderer, text, centerX - textRenderer.getWidth(text) / 2, y, color, false);
     }
 
+    private void sendButton(int index, boolean activate) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(index);
+        buf.writeBoolean(activate);
+
+        NetworkManager.sendToServer(ModMessages.BUTTON_WALKIETALKIE_C2S, buf);
+    }
+
+    private void sendCanal(int canal) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(canal);
+
+        NetworkManager.sendToServer(ModMessages.CANAL_WALKIETALKIE_C2S, buf);
+    }
+
     public void updateButtons(ItemStack stack) {
-        mute.setState(WalkieTalkieItem.isMute(stack));
-        activate.setState(WalkieTalkieItem.isActivate(stack));
-        canal = Text.literal(String.valueOf(WalkieTalkieItem.getCanal(stack)));
+        mute = WalkieTalkieItem.isMute(stack);
+        activate = WalkieTalkieItem.isActivate(stack);
+        canal = WalkieTalkieItem.getCanal(stack);
+
+        muteButton.setState(WalkieTalkieItem.isMute(stack));
+        activateButton.setState(WalkieTalkieItem.isActivate(stack));
+        canalSlider.setCanal((WalkieTalkieItem.getCanal(stack)));
+
+        canalAddButton.active = WalkieTalkieItem.getCanal(stack) != ModConfig.maxCanal;
+        canalRemoveButton.active = WalkieTalkieItem.getCanal(stack) != 1;
     }
 
     public static WalkieTalkieScreen getInstance() {
         return instance;
+    }
+
+    class WTCanalSlider extends CanalSlider {
+
+        public WTCanalSlider(int x, int y, int width, int height, Text text) {
+            super(x, y, width, height, text);
+            sendCanal(canal);
+        }
+
+        @Override
+        protected void updateCanal(int canal) {
+            sendCanal(canal);
+        }
     }
 
 }

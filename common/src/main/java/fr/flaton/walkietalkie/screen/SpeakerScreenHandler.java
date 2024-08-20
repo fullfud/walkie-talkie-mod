@@ -34,9 +34,12 @@ public class SpeakerScreenHandler extends ScreenHandler {
         return propertyDelegate.get(1);
     }
 
-    public void setPropertyDelegate(boolean activate, int canal) {
-        propertyDelegate.set(0, activate ? 1 : 0);
+    public void setCanal(int canal) {
         propertyDelegate.set(1, canal);
+    }
+
+    public void setActivate(boolean activate) {
+        propertyDelegate.set(0, activate ? 1 : 0);
     }
 
     @Override

@@ -1,4 +1,4 @@
-package fr.flaton.walkietalkie.network.packet.c2s;
+package fr.flaton.walkietalkie.network.packet.c2s.walkietalkie;
 
 import dev.architectury.networking.NetworkManager;
 import fr.flaton.walkietalkie.Util;
@@ -9,8 +9,10 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.math.MathHelper;
 
-public class UpdateWalkieTalkieC2SPacket {
+public class CanalWalkieTalkieC2SPacket {
+
     public static void receive(PacketByteBuf packetByteBuf, NetworkManager.PacketContext packetContext) {
         ServerPlayerEntity player = (ServerPlayerEntity) packetContext.getPlayer();
 
@@ -19,28 +21,9 @@ public class UpdateWalkieTalkieC2SPacket {
             return;
         }
 
-        int index = packetByteBuf.readInt();
-        boolean status = packetByteBuf.readBoolean();
+        int canal = packetByteBuf.readInt();
 
-        boolean activate = WalkieTalkieItem.isActivate(stack);
-        boolean mute = WalkieTalkieItem.isMute(stack);
-        int canal = WalkieTalkieItem.getCanal(stack);
-
-        switch (index) {
-            case 0 -> activate = !activate;
-            case 1 -> {
-                if (status) {
-                    canal = Util.loop(canal + 1, 1, ModConfig.maxCanal);
-                } else {
-                    canal = Util.loop(canal - 1, 1, ModConfig.maxCanal);
-                }
-            }
-            case 2 -> mute = !mute;
-        }
-
-        WalkieTalkieItem.setActivate(stack, activate);
-        WalkieTalkieItem.setMute(stack, mute);
-        WalkieTalkieItem.setCanal(stack, canal);
+        WalkieTalkieItem.setCanal(stack, MathHelper.clamp(canal, 1, ModConfig.maxCanal));
 
         PacketByteBuf packet = new PacketByteBuf(Unpooled.buffer());
         packet.writeItemStack(stack);

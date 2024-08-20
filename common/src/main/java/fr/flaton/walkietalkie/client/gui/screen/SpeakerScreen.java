@@ -2,7 +2,9 @@ package fr.flaton.walkietalkie.client.gui.screen;
 
 import dev.architectury.networking.NetworkManager;
 import fr.flaton.walkietalkie.Constants;
+import fr.flaton.walkietalkie.client.gui.widget.CanalSlider;
 import fr.flaton.walkietalkie.client.gui.widget.ToggleImageButton;
+import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.network.ModMessages;
 import fr.flaton.walkietalkie.screen.SpeakerScreenHandler;
 import io.netty.buffer.Unpooled;
@@ -26,7 +28,9 @@ public class SpeakerScreen extends HandledScreen<SpeakerScreenHandler> {
     private int guiTop;
 
     private ToggleImageButton activateButton;
-    private Text canalText = Text.literal("");
+    private CanalSlider canalSlider;
+    private ButtonWidget canalAddButton;
+    private ButtonWidget canalRemoveButton;
 
     public SpeakerScreen(SpeakerScreenHandler handler, PlayerInventory inventory, Text title) {
         super(handler, inventory, title);
@@ -39,8 +43,6 @@ public class SpeakerScreen extends HandledScreen<SpeakerScreenHandler> {
         drawCenteredText(context, this.textRenderer, title.getString(), this.width / 2, guiTop + 7, 4210752);
 
         updateActivateState();
-
-        drawCenteredText(context, this.textRenderer, String.valueOf(handler.getCanal()), this.width / 2, guiTop + 26, 4210752);
     }
 
     protected void drawCenteredText(DrawContext context, TextRenderer textRenderer, String text, int centerX, int y, int color) {
@@ -58,6 +60,10 @@ public class SpeakerScreen extends HandledScreen<SpeakerScreenHandler> {
 
     private void updateActivateState() {
         activateButton.setState(handler.isActivate());
+        canalSlider.setCanal(handler.getCanal());
+
+        canalAddButton.active = handler.getCanal() != ModConfig.maxCanal;
+        canalRemoveButton.active = handler.getCanal() != 1;
     }
 
     @Override
@@ -67,23 +73,55 @@ public class SpeakerScreen extends HandledScreen<SpeakerScreenHandler> {
         this.guiLeft = (this.width - xSize) / 2;
         this.guiTop = (this.height - ySize) / 2;
 
-        activateButton = new ToggleImageButton(guiLeft + 6, guiTop + ySize - 6 - 20, ACTIVATE_TEXTURE, button -> sendUpdateSpeaker(0, false), handler.isActivate());
-        this.addDrawableChild(activateButton);
+        activateButton = this.addDrawableChild(new ToggleImageButton(guiLeft + 8, guiTop + ySize - 8 - 20, ACTIVATE_TEXTURE, button -> sendButton(!handler.isActivate()), handler.isActivate()));
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> sendUpdateSpeaker(1, true)).dimensions(this.width / 2 - 10 + 40, guiTop + 20, 20, 20).build());
+        canalSlider = this.addDrawableChild(new SpeakerCanalSlider(this.width / 2 - 70, guiTop + 20, 140, 20, Text.empty()));
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> sendUpdateSpeaker(1, false)).dimensions(this.width / 2 - 10 - 40, guiTop + 20, 20, 20).build());
-
-        canalText = Text.literal(String.valueOf(handler.getCanal()));
+        canalAddButton = this.addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> sendCanal(handler.getCanal() + 1)).dimensions(this.width / 2 - 10 + 80, guiTop + 20, 20, 20).build());
+        canalRemoveButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> sendCanal(handler.getCanal() - 1)).dimensions(this.width / 2 - 10 - 80, guiTop + 20, 20, 20).build());
     }
 
-    private void sendUpdateSpeaker(int index, boolean status) {
+    private void sendButton(boolean activate) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        buf.writeInt(index);
-        buf.writeBoolean(status);
+        buf.writeBoolean(activate);
 
-        NetworkManager.sendToServer(ModMessages.UPDATE_SPEAKER_C2S, buf);
+        NetworkManager.sendToServer(ModMessages.BUTTON_SPEAKER_C2S, buf);
     }
 
+    private void sendCanal(int canal) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(canal);
 
+        NetworkManager.sendToServer(ModMessages.CANAL_SPEAKER_C2S, buf);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (this.getFocused() != null && this.isDragging() && button == 0) {
+            return this.getFocused().mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        this.setDragging(false);
+        if (this.canalSlider.isSelected()) {
+            this.canalSlider.mouseReleased(mouseX, mouseY, button);
+            return true;
+        }
+        return this.hoveredElement(mouseX, mouseY).filter(element -> element.mouseReleased(mouseX, mouseY, button)).isPresent();
+    }
+
+    class SpeakerCanalSlider extends CanalSlider {
+
+        public SpeakerCanalSlider(int x, int y, int width, int height, Text text) {
+            super(x, y, width, height, text);
+        }
+
+        @Override
+        protected void updateCanal(int canal) {
+            sendCanal(canal);
+        }
+    }
 }
