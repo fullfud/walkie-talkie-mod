@@ -135,6 +135,7 @@ public class Member {
                         voiceChatAPI.createPosition(pos.x, pos.y, pos.z));
                 locationalAudioChannel.setDistance(ModConfig.speakerDistance);
                 audioChannel = locationalAudioChannel;
+                audioChannel.setCategory("speakers");
             } else { // Player
                 audioChannel = voiceChatAPI.createEntityAudioChannel(uuid, connection.getPlayer());
             }
@@ -176,7 +177,7 @@ public class Member {
         int sample;
         for (int i = 0; i < result.length; i++) {
             sample = 0;
-            for (short[] audio : packetBuffer) {
+            for (short[] audio : new HashSet<>(packetBuffer)) {
                 sample += audio[i];
             }
             if (sample > Short.MAX_VALUE) {

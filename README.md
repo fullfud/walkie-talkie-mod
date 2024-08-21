@@ -38,12 +38,12 @@ This mod adds two-way radios with different upgrades.
 + An interface for configuring the radio
 + Select a radio channel
 + Turn off the microphone (of the walkie-talkie)
-+ Turn off the microphone (of the walkie-talkie)
 + Limited distance
 + Upgrade to extend the limit
 + Add speaker block
 + Volume category for speakers
 + Keybind to activate/deactivate the walkie-talkie
++ Speaker emit redstone
 ## Upgrades
 + Wood: 128 block distance
 + Stone: 256 block distance
