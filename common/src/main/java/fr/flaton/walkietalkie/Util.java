@@ -3,13 +3,14 @@ package fr.flaton.walkietalkie;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
 import fr.flaton.walkietalkie.radio.Canal;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -19,10 +20,10 @@ import java.util.Set;
 
 public class Util {
 
-    public static ItemStack getWalkieTalkieInHand(PlayerEntity player) {
+    public static @Nullable ItemStack getWalkieTalkieInHand(@NotNull Player player) {
 
-        ItemStack mainHand = player.getStackInHand(Hand.MAIN_HAND);
-        ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
+        ItemStack mainHand = player.getItemInHand(InteractionHand.MAIN_HAND);
+        ItemStack offHand = player.getItemInHand(InteractionHand.OFF_HAND);
 
         if (mainHand.getItem() instanceof WalkieTalkieItem) {
             return mainHand;
@@ -33,35 +34,35 @@ public class Util {
         return null;
     }
 
-    public static boolean canBroadcastToReceiver(World senderWorld, World receiverWorld, Vec3d senderPos, Vec3d receiverPos, int range) {
-        if (!ModConfig.crossDimensionsEnabled && !receiverWorld.getDimension().equals(senderWorld.getDimension()))
+    public static boolean canBroadcastToReceiver(Level senderLevel, Level receiverLevel, Vec3 senderPos, Vec3 receiverPos, int range) {
+        if (!ModConfig.crossDimensionsEnabled && !receiverLevel.dimension().equals(senderLevel.dimension()))
             return false;
 
-        double senderCoordinateScale = senderWorld.getDimension().coordinateScale();
-        double receiverCoordinateScale = receiverWorld.getDimension().coordinateScale();
+        double senderCoordinateScale = senderLevel.dimensionType().coordinateScale();
+        double receiverCoordinateScale = receiverLevel.dimensionType().coordinateScale();
 
         double appliedRange = ModConfig.applyDimensionScale ? range / Math.max(senderCoordinateScale, receiverCoordinateScale) : range;
 
-        return senderPos.isInRange(receiverPos, appliedRange);
+        return senderPos.closerThan(receiverPos, appliedRange);
     }
 
-    public static List<ItemStack> getWalkieTalkies(PlayerEntity player) {
+    public static List<ItemStack> getWalkieTalkies(Player player) {
 
         List<ItemStack> itemStacks = new ArrayList<>();
 
-        PlayerInventory playerInventory = player.getInventory();
+        Inventory playerInventory = player.getInventory();
         List<ItemStack> inventory = new ArrayList<>();
         for (int i = 0; i < 9; i++) {
-            inventory.add(playerInventory.main.get(i));
+            inventory.add(playerInventory.items.get(i));
         }
-        inventory.addAll(playerInventory.offHand);
+        inventory.addAll(playerInventory.offhand);
 
         for (ItemStack stack : inventory) {
             if (stack.isEmpty()) {
                 continue;
             }
 
-            if (stack.getItem() instanceof WalkieTalkieItem && stack.hasNbt()) {
+            if (stack.getItem() instanceof WalkieTalkieItem) {
                 itemStacks.add(stack);
             }
 
@@ -70,7 +71,7 @@ public class Util {
         return itemStacks;
     }
 
-    public static @Nullable ItemStack getOptimalWalkieTalkieRange(PlayerEntity player) {
+    public static @Nullable ItemStack getOptimalWalkieTalkieRange(Player player) {
         List<ItemStack> itemStacks = getWalkieTalkies(player);
         if (itemStacks.isEmpty()) {
             return null;
@@ -92,7 +93,7 @@ public class Util {
         return itemStack;
     }
 
-    public static @Nullable ItemStack getWalkieTalkieActivated(PlayerEntity player) {
+    public static @Nullable ItemStack getWalkieTalkieActivated(Player player) {
         ItemStack stack = getOptimalWalkieTalkieRange(player);
         if (stack != null && WalkieTalkieItem.isActivate(stack)) {
             return stack;
@@ -100,13 +101,13 @@ public class Util {
         return null;
     }
 
-    public static List<ItemStack> getActivatedWalkieTalkies(ServerPlayerEntity player) {
+    public static List<ItemStack> getActivatedWalkieTalkies(ServerPlayer player) {
         List<ItemStack> walkieTalkies = getWalkieTalkies(player);
         walkieTalkies.removeIf(walkieTalkie -> !WalkieTalkieItem.isActivate(walkieTalkie));
         return walkieTalkies;
     }
 
-    public static Set<Canal> getCanals(ServerPlayerEntity player) {
+    public static Set<Canal> getCanals(ServerPlayer player) {
         Set<Canal> canals = new HashSet<>();
         for (ItemStack itemStack : getActivatedWalkieTalkies(player)) {
             canals.add(Canal.getOrCreate(WalkieTalkieItem.getCanal(itemStack)));

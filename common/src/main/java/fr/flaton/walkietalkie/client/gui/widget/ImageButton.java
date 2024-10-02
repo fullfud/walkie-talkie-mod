@@ -1,33 +1,33 @@
 package fr.flaton.walkietalkie.client.gui.widget;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.widget.PressableWidget;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
-public class ImageButton extends PressableWidget {
+public class ImageButton extends AbstractButton {
 
-    protected MinecraftClient mc;
-    protected Identifier texture;
+    protected Minecraft mc;
+    protected ResourceLocation texture;
     protected PressAction onPress;
     @Nullable
     protected TooltipSupplier tooltipSupplier;
 
-    public ImageButton(int x, int y, Identifier texture, PressAction onPress, @Nullable TooltipSupplier tooltipSupplier) {
-        super(x, y, 20, 20, Text.empty());
-        mc = MinecraftClient.getInstance();
+    public ImageButton(int x, int y, ResourceLocation texture, PressAction onPress, @Nullable TooltipSupplier tooltipSupplier) {
+        super(x, y, 20, 20, Component.empty());
+        mc = Minecraft.getInstance();
         this.texture = texture;
         this.onPress = onPress;
         this.tooltipSupplier = tooltipSupplier;
     }
 
-    public ImageButton(int x, int y, Identifier texture, PressAction onPress) {
+    public ImageButton(int x, int y, ResourceLocation texture, PressAction onPress) {
         this(x, y, texture, onPress, null);
     }
 
@@ -36,37 +36,37 @@ public class ImageButton extends PressableWidget {
         this.onPress.onPress(this);
     }
 
-    protected void renderImage(DrawContext context, int mouseX, int mouseY) {
-        RenderSystem.setShader(GameRenderer::getPositionTexProgram);
+    protected void renderImage(GuiGraphics context, int mouseX, int mouseY) {
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderColor(1F, 1F, 1F, 1F);
-        context.drawTexture(texture, getX() + 2, getY() + 2, 0, 0, 16, 16, 16, 16);
+        context.blit(texture, getX() + 2, getY() + 2, 0, 0, 16, 16, 16, 16);
     }
 
     @Override
-    protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics context, int mouseX, int mouseY, float delta) {
         super.renderWidget(context, mouseX, mouseY, delta);
         renderImage(context, mouseX, mouseY);
 
-        if (hovered) {
-            renderToolTip(context, mc.textRenderer, mouseX, mouseY);
+        if (isHovered) {
+            renderToolTip(context, mc.font, mouseX, mouseY);
         }
     }
 
-    public void renderToolTip(DrawContext context, TextRenderer textRenderer, int mouseX, int mouseY) {
+    public void renderToolTip(GuiGraphics context, Font font, int mouseX, int mouseY) {
         if (tooltipSupplier == null) {
             return;
         }
-        tooltipSupplier.onTooltip(this, context, textRenderer, mouseX, mouseY);
+        tooltipSupplier.onTooltip(this, context, font, mouseX, mouseY);
     }
 
 
     @Override
-    protected void appendClickableNarrations(NarrationMessageBuilder builder) {
-        appendDefaultNarrations(builder);
+    protected void updateWidgetNarration(NarrationElementOutput builder) {
+        defaultButtonNarrationText(builder);
     }
 
     public interface TooltipSupplier {
-        void onTooltip(ImageButton button, DrawContext context, TextRenderer textRenderer, int mouseX, int mouseY);
+        void onTooltip(ImageButton button, GuiGraphics context, Font font, int mouseX, int mouseY);
     }
 
     public interface PressAction {

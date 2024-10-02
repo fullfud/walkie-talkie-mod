@@ -4,77 +4,79 @@ package fr.flaton.walkietalkie.block;
 import com.mojang.serialization.MapCodec;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.radio.Member;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
-public class SpeakerBlock extends BlockWithEntity implements BlockEntityProvider {
+public class SpeakerBlock extends BaseEntityBlock implements EntityBlock {
 
-    public static final MapCodec<SpeakerBlock> CODEC = createCodec(SpeakerBlock::new);
+    public static final MapCodec<SpeakerBlock> CODEC = simpleCodec(SpeakerBlock::new);
 
-    protected SpeakerBlock(Settings settings) {
-        super(settings);
+    protected SpeakerBlock(Properties properties) {
+        super(properties);
     }
 
     @Override
-    protected MapCodec<? extends BlockWithEntity> getCodec() {
+    protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new SpeakerBlockEntity(pos, state);
     }
 
     @Override
-    public BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.MODEL;
+    public RenderShape getRenderShape(BlockState state) {
+        return RenderShape.MODEL;
     }
 
     @Override
-    public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
-        if (world.isClient) {
-            return ActionResult.SUCCESS;
+    public InteractionResult useWithoutItem(BlockState blockState, Level level, BlockPos blockPos, Player player, BlockHitResult blockHitResult) {
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
         } else {
-            if (world.getBlockEntity(pos) instanceof SpeakerBlockEntity blockEntity) {
-                player.openHandledScreen(blockEntity);
+            if (level.getBlockEntity(blockPos) instanceof SpeakerBlockEntity blockEntity) {
+                player.openMenu(blockEntity);
             }
         }
 
-        return ActionResult.CONSUME;
+        return InteractionResult.CONSUME;
     }
 
     @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
-        world.scheduleBlockTick(pos, this, 0);
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
+        level.scheduleTick(pos, this, 0);
     }
 
     @Override
-    public void scheduledTick(BlockState state, ServerWorld world, BlockPos pos, Random random) {
-        world.updateNeighbors(pos, this);
-        world.scheduleBlockTick(pos, this, 0);
+    public void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
+        level.updateNeighborsAt(pos, this);
+        level.scheduleTick(pos, this, 0);
     }
 
     @Override
-    public boolean hasComparatorOutput(BlockState state) {
+    public boolean hasAnalogOutputSignal(BlockState state) {
         return true;
     }
 
     @Override
-    public int getComparatorOutput(BlockState state, World world, BlockPos pos) {
-        if (!(world.getBlockEntity(pos) instanceof SpeakerBlockEntity blockEntity)) return 0;
+    public int getAnalogOutputSignal(BlockState state, Level level, BlockPos pos) {
+        if (!(level.getBlockEntity(pos) instanceof SpeakerBlockEntity blockEntity)) return 0;
         UUID uuid = blockEntity.getUuid();
         Member member = Member.get(uuid);
         if (member == null) return 0;

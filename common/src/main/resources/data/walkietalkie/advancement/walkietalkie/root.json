@@ -1,7 +1,7 @@
 {
   "display": {
     "icon": {
-      "item": "walkietalkie:wooden_walkietalkie"
+      "id": "walkietalkie:wooden_walkietalkie"
     },
     "title": {
       "translate": "advancement.walkietalkie.root.title"
@@ -20,7 +20,7 @@
       "conditions": {
         "items": [
           {
-            "tag": "walkietalkie:walkietalkies"
+            "items": "#walkietalkie:walkietalkies"
           }
         ]
       }

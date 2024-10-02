@@ -1,54 +1,54 @@
 package fr.flaton.walkietalkie.screen;
 
 import fr.flaton.walkietalkie.block.ModBlocks;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerContext;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.item.ItemStack;
 
-public class SpeakerScreenHandler extends ScreenHandler {
-    private final PropertyDelegate propertyDelegate;
+public class SpeakerScreenHandler extends AbstractContainerMenu {
+    private final ContainerData containerData;
 
-    private final ScreenHandlerContext context;
+    private final ContainerLevelAccess levelAccess;
 
-    public SpeakerScreenHandler(int i, PlayerInventory playerInventory) {
-        this(i, new ArrayPropertyDelegate(2), ScreenHandlerContext.EMPTY);
+    public SpeakerScreenHandler(int i, Inventory inventory) {
+        this(i, new SimpleContainerData(2), ContainerLevelAccess.NULL);
     }
 
-    public SpeakerScreenHandler(int syncId, PropertyDelegate delegate, ScreenHandlerContext context) {
+    public SpeakerScreenHandler(int syncId, ContainerData containerData, ContainerLevelAccess levelAccess) {
         super(ModScreenHandlers.SPEAKER.get(), syncId);
-        this.propertyDelegate = delegate;
-        this.context = context;
+        this.containerData = containerData;
+        this.levelAccess = levelAccess;
 
-        addProperties(delegate);
+        addDataSlots(containerData);
     }
 
     public boolean isActivate() {
-        return propertyDelegate.get(0) > 0;
+        return containerData.get(0) > 0;
     }
 
     public int getCanal() {
-        return propertyDelegate.get(1);
+        return containerData.get(1);
     }
 
     public void setCanal(int canal) {
-        propertyDelegate.set(1, canal);
+        containerData.set(1, canal);
     }
 
     public void setActivate(boolean activate) {
-        propertyDelegate.set(0, activate ? 1 : 0);
+        containerData.set(0, activate ? 1 : 0);
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slot) {
+    public ItemStack quickMoveStack(Player player, int i) {
         return null;
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
-        return canUse(this.context, player, ModBlocks.SPEAKER.get());
+    public boolean stillValid(Player player) {
+        return stillValid(this.levelAccess, player, ModBlocks.SPEAKER.get());
     }
 }

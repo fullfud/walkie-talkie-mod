@@ -7,7 +7,7 @@
   ],
   "key": {
     "#": {
-      "item": "minecraft:diamond"
+      "item": "minecraft:stone"
     },
     "r": {
       "item": "minecraft:redstone"
@@ -20,6 +20,6 @@
     }
   },
   "result": {
-    "item": "walkietalkie:diamond_walkietalkie"
+    "id": "walkietalkie:stone_walkietalkie"
   }
 }

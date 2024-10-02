@@ -1,22 +1,25 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "###",
-    "LXL",
-    "###"
+    "l#",
+    "rw",
+    "ww"
   ],
   "key": {
     "#": {
-      "tag": "minecraft:planks"
+      "item": "minecraft:gold_ingot"
     },
-    "X": {
+    "r": {
       "item": "minecraft:redstone"
     },
-    "L": {
+    "l": {
+      "item": "minecraft:lightning_rod"
+    },
+    "w":{
       "tag": "minecraft:wool"
     }
   },
   "result": {
-    "item": "walkietalkie:speaker"
+    "id": "walkietalkie:golden_walkietalkie"
   }
 }

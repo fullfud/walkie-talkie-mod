@@ -3,19 +3,20 @@ package fr.flaton.walkietalkie.item;
 import dev.architectury.registry.CreativeTabRegistry;
 import dev.architectury.registry.registries.DeferredRegister;
 import dev.architectury.registry.registries.RegistrySupplier;
-import net.minecraft.item.*;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.text.Text;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.ItemStack;
 
 public class ModItemGroup {
 
-    public static final DeferredRegister<ItemGroup> TABS =
-            DeferredRegister.create("walkietalkie", RegistryKeys.ITEM_GROUP);
+    public static final DeferredRegister<CreativeModeTab> TABS =
+            DeferredRegister.create("walkietalkie", Registries.CREATIVE_MODE_TAB);
 
-    public static final RegistrySupplier<ItemGroup> WALKIETALKIE = TABS.register(
+    public static final RegistrySupplier<CreativeModeTab> WALKIETALKIE = TABS.register(
             "walkietalkie",
             () -> CreativeTabRegistry.create(
-                    Text.translatable("itemGroup.walkietalkie.walkietalkie"),
+                    Component.translatable("itemGroup.walkietalkie.walkietalkie"),
                     () -> new ItemStack(ModItems.WOODEN_WALKIETALKIE.get())
             )
     );

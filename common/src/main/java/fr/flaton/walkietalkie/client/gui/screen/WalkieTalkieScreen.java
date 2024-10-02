@@ -6,17 +6,16 @@ import fr.flaton.walkietalkie.client.gui.widget.CanalSlider;
 import fr.flaton.walkietalkie.client.gui.widget.ToggleImageButton;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
-import fr.flaton.walkietalkie.network.ModMessages;
-import io.netty.buffer.Unpooled;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import fr.flaton.walkietalkie.network.packet.c2s.walkietalkie.ButtonWalkieTalkieC2SPacket;
+import fr.flaton.walkietalkie.network.packet.c2s.walkietalkie.CanalWalkieTalkieC2SPacket;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 
 public class WalkieTalkieScreen extends Screen {
 
@@ -37,15 +36,15 @@ public class WalkieTalkieScreen extends Screen {
     private ToggleImageButton activateButton;
 
     private CanalSlider canalSlider;
-    private ButtonWidget canalAddButton;
-    private ButtonWidget canalRemoveButton;
+    private Button canalAddButton;
+    private Button canalRemoveButton;
 
-    private static final Identifier BG_TEXTURE = new Identifier(Constants.MOD_ID, "textures/gui/gui_walkietalkie.png");
-    private static final Identifier MUTE_TEXTURE = new Identifier("voicechat", "textures/icons/microphone_button.png");
-    private static final Identifier ACTIVATE_TEXTURE = new Identifier(Constants.MOD_ID, "textures/icons/activate.png");
+    private static final ResourceLocation BG_TEXTURE = ResourceLocation.fromNamespaceAndPath(Constants.MOD_ID, "textures/gui/gui_walkietalkie.png");
+    private static final ResourceLocation MUTE_TEXTURE = ResourceLocation.fromNamespaceAndPath("voicechat", "textures/icons/microphone_button.png");
+    private static final ResourceLocation ACTIVATE_TEXTURE = ResourceLocation.fromNamespaceAndPath(Constants.MOD_ID, "textures/icons/activate.png");
 
     public WalkieTalkieScreen(ItemStack stack) {
-        super(Text.translatable("gui.walkietalkie.title"));
+        super(Component.translatable("gui.walkietalkie.title"));
         instance = this;
         this.stack = stack;
 
@@ -53,7 +52,7 @@ public class WalkieTalkieScreen extends Screen {
         activate = WalkieTalkieItem.isActivate(stack);
         canal = WalkieTalkieItem.getCanal(stack);
 
-        MinecraftClient.getInstance().setScreen(this);
+        Minecraft.getInstance().setScreen(this);
     }
 
     @Override
@@ -63,48 +62,41 @@ public class WalkieTalkieScreen extends Screen {
         this.guiTop = (this.height - ySize) / 2;
 
         muteButton = new ToggleImageButton(guiLeft + 8, guiTop + ySize - 8 - 20, MUTE_TEXTURE, button -> sendButton(1, !mute), mute);
-        this.addDrawableChild(muteButton);
+        this.addRenderableWidget(muteButton);
 
         activateButton = new ToggleImageButton(guiLeft + 30, guiTop + ySize - 28, ACTIVATE_TEXTURE, button -> sendButton(0, !activate), activate);
-        this.addDrawableChild(activateButton);
+        this.addRenderableWidget(activateButton);
 
-        canalSlider = this.addDrawableChild(new WTCanalSlider(this.width / 2 - 70, guiTop + 20, 140, 20, Text.empty()));
+        canalSlider = this.addRenderableWidget(new WTCanalSlider(this.width / 2 - 70, guiTop + 20, 140, 20, Component.empty()));
 
-        canalAddButton = this.addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> sendCanal(canal + 1)).dimensions(this.width / 2 - 10 + 80, guiTop + 20, 20, 20).build());
-        canalRemoveButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> sendCanal(canal - 1)).dimensions(this.width / 2 - 10 - 80, guiTop + 20, 20, 20).build());
+        canalAddButton = this.addRenderableWidget(Button.builder(Component.literal(">"), button -> sendCanal(canal + 1)).bounds(this.width / 2 - 10 + 80, guiTop + 20, 20, 20).build());
+        canalRemoveButton = this.addRenderableWidget(Button.builder(Component.literal("<"), button -> sendCanal(canal - 1)).bounds(this.width / 2 - 10 - 80, guiTop + 20, 20, 20).build());
 
     }
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void renderBackground(GuiGraphics context, int mouseX, int mouseY, float delta) {
         super.renderBackground(context, mouseX, mouseY, delta);
-        context.drawTexture(BG_TEXTURE, guiLeft, guiTop, 0, 0, xSize, ySize);
+        context.blit(BG_TEXTURE, guiLeft, guiTop, 0, 0, xSize, ySize);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context, mouseX, mouseY, delta);
         super.render(context, mouseX, mouseY, delta);
-        drawCenteredText(context, this.textRenderer, this.title, this.width / 2, guiTop + 7, 4210752);
+        drawCenteredText(context, this.font, this.title, this.width / 2, guiTop + 7, 4210752);
     }
 
-    protected void drawCenteredText(DrawContext context, TextRenderer textRenderer, Text text, int centerX, int y, int color) {
-        context.drawText(textRenderer, text, centerX - textRenderer.getWidth(text) / 2, y, color, false);
+    protected void drawCenteredText(GuiGraphics context, Font font, Component component, int centerX, int y, int color) {
+        context.drawString(font, component, centerX - font.width(component) / 2, y, color, false);
     }
 
     private void sendButton(int index, boolean activate) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        buf.writeInt(index);
-        buf.writeBoolean(activate);
-
-        NetworkManager.sendToServer(ModMessages.BUTTON_WALKIETALKIE_C2S, buf);
+        NetworkManager.sendToServer(new ButtonWalkieTalkieC2SPacket(index, activate));
     }
 
     private void sendCanal(int canal) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        buf.writeInt(canal);
-
-        NetworkManager.sendToServer(ModMessages.CANAL_WALKIETALKIE_C2S, buf);
+        NetworkManager.sendToServer(new CanalWalkieTalkieC2SPacket(canal));
     }
 
     public void updateButtons(ItemStack stack) {
@@ -127,17 +119,17 @@ public class WalkieTalkieScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         this.setDragging(false);
-        if (this.canalSlider.isSelected()) {
+        if (this.canalSlider.isHoveredOrFocused()) {
             this.canalSlider.mouseReleased(mouseX, mouseY, button);
             return true;
         }
-        return this.hoveredElement(mouseX, mouseY).filter(element -> element.mouseReleased(mouseX, mouseY, button)).isPresent();
+        return this.getChildAt(mouseX, mouseY).filter(element -> element.mouseReleased(mouseX, mouseY, button)).isPresent();
     }
 
     class WTCanalSlider extends CanalSlider {
 
-        public WTCanalSlider(int x, int y, int width, int height, Text text) {
-            super(x, y, width, height, text);
+        public WTCanalSlider(int x, int y, int width, int height, Component component) {
+            super(x, y, width, height, component);
             sendCanal(canal);
         }
 

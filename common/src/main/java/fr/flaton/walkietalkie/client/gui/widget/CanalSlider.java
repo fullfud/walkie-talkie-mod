@@ -1,16 +1,16 @@
 package fr.flaton.walkietalkie.client.gui.widget;
 
 import fr.flaton.walkietalkie.config.ModConfig;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 
-public abstract class CanalSlider extends SliderWidget {
+public abstract class CanalSlider extends AbstractSliderButton {
 
     private int prevCanal = 0;
 
-    public CanalSlider(int x, int y, int width, int height, Text text) {
-        super(x, y, width, height, text, 0);
+    public CanalSlider(int x, int y, int width, int height, Component component) {
+        super(x, y, width, height, component, 0);
     }
 
     private int getCanal() {
@@ -23,7 +23,7 @@ public abstract class CanalSlider extends SliderWidget {
             if (ModConfig.maxCanal != 1)
                 value = (double) (canal - 1) / (ModConfig.maxCanal - 1);
             if (canal != getCanal())
-                this.value = MathHelper.clamp(value, 0.0, 1.0);
+                this.value = Mth.clamp(value, 0.0, 1.0);
             updateMessage();
             prevCanal = canal;
         }
@@ -39,7 +39,7 @@ public abstract class CanalSlider extends SliderWidget {
 
     @Override
     protected void updateMessage() {
-        setMessage(Text.of(String.valueOf(getCanal())));
+        setMessage(Component.literal(String.valueOf(getCanal())));
     }
 
     @Override

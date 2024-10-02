@@ -7,7 +7,7 @@
   ],
   "key": {
     "#": {
-      "item": "minecraft:gold_ingot"
+      "item": "minecraft:iron_ingot"
     },
     "r": {
       "item": "minecraft:redstone"
@@ -20,6 +20,6 @@
     }
   },
   "result": {
-    "item": "walkietalkie:golden_walkietalkie"
+    "id": "walkietalkie:iron_walkietalkie"
   }
 }

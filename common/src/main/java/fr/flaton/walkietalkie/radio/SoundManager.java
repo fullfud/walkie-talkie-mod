@@ -4,9 +4,9 @@ import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import fr.flaton.walkietalkie.Util;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,7 +27,7 @@ public class SoundManager {
         if (senderConnection == null)
             return;
 
-        if (!(senderConnection.getPlayer().getPlayer() instanceof PlayerEntity senderPlayer))
+        if (!(senderConnection.getPlayer().getPlayer() instanceof Player senderPlayer))
             return;
 
         ItemStack senderWalkie = Util.getWalkieTalkieInHand(senderPlayer);
@@ -41,7 +41,7 @@ public class SoundManager {
         int senderCanal = WalkieTalkieItem.getCanal(senderWalkie);
         int senderRange = WalkieTalkieItem.getRange(senderWalkie);
 
-        Member source = Member.get(senderPlayer.getUuid());
+        Member source = Member.get(senderPlayer.getUUID());
         if (source == null)
             return;
 
@@ -56,7 +56,7 @@ public class SoundManager {
     }
 
     private boolean isValidListener(Member source, Member member, int range) {
-        return Util.canBroadcastToReceiver(source.getWorld(), member.getWorld(), source.getPos(), member.getPos(), range);
+        return Util.canBroadcastToReceiver(source.getLevel(), member.getLevel(), source.getPos(), member.getPos(), range);
     }
 
     public static SoundManager getInstance() {

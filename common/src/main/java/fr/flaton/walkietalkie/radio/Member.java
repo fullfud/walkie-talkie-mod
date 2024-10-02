@@ -10,9 +10,9 @@ import fr.flaton.walkietalkie.Util;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -24,8 +24,8 @@ public class Member {
     private final static Map<UUID, Member> MEMBERS = new HashMap<>();
 
     private final UUID uuid;
-    private Vec3d pos;
-    private World world;
+    private Vec3 pos;
+    private Level level;
     private final Set<Canal> canals = new HashSet<>();
 
     private short volume = 0;
@@ -36,16 +36,16 @@ public class Member {
     private AudioChannel audioChannel;
 
     public static void serverTick(MinecraftServer server) {
-        List<ServerPlayerEntity> playerList = server.getPlayerManager().getPlayerList();
+        List<ServerPlayer> playerList = server.getPlayerList().getPlayers();
         List<Member> members = new ArrayList<>();
 
-        for (ServerPlayerEntity player : playerList) {
-            Member member = Member.get(player.getUuid(), player.getPos(), player.getWorld(), Util.getCanals(player));
+        for (ServerPlayer player : playerList) {
+            Member member = Member.get(player.getUUID(), player.position(), player.level(), Util.getCanals(player));
             if (member !=null)
                 members.add(member);
         }
         for (SpeakerBlockEntity speaker : SpeakerBlockEntity.getActiveSpeakers()) {
-            Member member = Member.get(speaker.getUuid(), speaker.getPos().toCenterPos(), speaker.getWorld(), speaker.getCanal());
+            Member member = Member.get(speaker.getUuid(), speaker.getBlockPos().getCenter(), speaker.getLevel(), speaker.getCanal());
             if (member !=null)
                 members.add(member);
         }
@@ -70,10 +70,10 @@ public class Member {
         return MEMBERS.get(uuid);
     }
 
-    private static @Nullable Member get(UUID uuid, Vec3d pos, World world, Set<Canal> canals) {
+    private static @Nullable Member get(UUID uuid, Vec3 pos, Level level, Set<Canal> canals) {
         if (canals.isEmpty()) return null;
         Member member = MEMBERS.computeIfAbsent(uuid, Member::new);
-        member.update(pos, world, canals);
+        member.update(pos, level, canals);
         return member;
     }
 
@@ -82,9 +82,9 @@ public class Member {
         this.decoder = voiceChatAPI.createDecoder();
     }
 
-    private void update(Vec3d pos, World world, Set<Canal> canals) {
+    private void update(Vec3 pos, Level level, Set<Canal> canals) {
         this.pos = pos;
-        this.world = world;
+        this.level = level;
 
         for (Canal canal : canals) {
             if (!this.canals.contains(canal)) {
@@ -105,12 +105,12 @@ public class Member {
         return uuid;
     }
 
-    public Vec3d getPos() {
+    public Vec3 getPos() {
         return pos;
     }
 
-    public World getWorld() {
-        return world;
+    public Level getLevel() {
+        return level;
     }
 
     public Set<Canal> getCanals() {
@@ -131,7 +131,7 @@ public class Member {
             VoicechatConnection connection = voiceChatAPI.getConnectionOf(uuid);
             if (connection == null) { // Speaker
                 LocationalAudioChannel locationalAudioChannel = voiceChatAPI.createLocationalAudioChannel(uuid,
-                        voiceChatAPI.fromServerLevel(world),
+                        voiceChatAPI.fromServerLevel(level),
                         voiceChatAPI.createPosition(pos.x, pos.y, pos.z));
                 locationalAudioChannel.setDistance(ModConfig.speakerDistance);
                 audioChannel = locationalAudioChannel;

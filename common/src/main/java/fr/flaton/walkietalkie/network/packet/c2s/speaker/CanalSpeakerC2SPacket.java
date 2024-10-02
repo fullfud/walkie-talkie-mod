@@ -1,29 +1,42 @@
 package fr.flaton.walkietalkie.network.packet.c2s.speaker;
 
 import dev.architectury.networking.NetworkManager;
+import fr.flaton.walkietalkie.Constants;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.screen.SpeakerScreenHandler;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.math.MathHelper;
+import io.netty.buffer.ByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 
-public class CanalSpeakerC2SPacket {
+public record CanalSpeakerC2SPacket(int canal) implements CustomPacketPayload {
 
-    public static void receive(PacketByteBuf packetByteBuf, NetworkManager.PacketContext packetContext) {
+    public static final Type<CanalSpeakerC2SPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Constants.MOD_ID, "canal_speaker_c2s"));
+    public static final StreamCodec<ByteBuf, CanalSpeakerC2SPacket> STREAM_CODEC = StreamCodec.composite(ByteBufCodecs.INT, CanalSpeakerC2SPacket::canal, CanalSpeakerC2SPacket::new);
 
-        ServerPlayerEntity player = (ServerPlayerEntity) packetContext.getPlayer();
+    public static void receive(CanalSpeakerC2SPacket type, NetworkManager.PacketContext packetContext) {
 
-        int canal = packetByteBuf.readInt();
+        ServerPlayer player = (ServerPlayer) packetContext.getPlayer();
 
-        ScreenHandler screenHandler = player.currentScreenHandler;
+        int canal = type.canal();
+
+        AbstractContainerMenu screenHandler = player.containerMenu;
 
         if (!(screenHandler instanceof SpeakerScreenHandler speakerScreenHandler)) {
             return;
         }
 
-        canal = MathHelper.clamp(canal, 1, ModConfig.maxCanal);
+        canal = Mth.clamp(canal, 1, ModConfig.maxCanal);
 
         speakerScreenHandler.setCanal(canal);
+    }
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 }

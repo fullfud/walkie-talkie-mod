@@ -1,26 +1,40 @@
 package fr.flaton.walkietalkie.network.packet.c2s.speaker;
 
 import dev.architectury.networking.NetworkManager;
+import fr.flaton.walkietalkie.Constants;
 import fr.flaton.walkietalkie.screen.SpeakerScreenHandler;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
+import io.netty.buffer.ByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 
-public class ButtonSpeakerC2SPacket {
-    public static void receive(PacketByteBuf packetByteBuf, NetworkManager.PacketContext packetContext) {
+public record ButtonSpeakerC2SPacket(boolean activate) implements CustomPacketPayload {
 
-        ServerPlayerEntity player = (ServerPlayerEntity) packetContext.getPlayer();
+    public static final Type<ButtonSpeakerC2SPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Constants.MOD_ID, "button_speaker_c2s"));
+    public static final StreamCodec<ByteBuf, ButtonSpeakerC2SPacket> STREAM_CODEC = StreamCodec.composite(ByteBufCodecs.BOOL, ButtonSpeakerC2SPacket::activate, ButtonSpeakerC2SPacket::new);
 
-        boolean activate = packetByteBuf.readBoolean();
+    public static void receive(ButtonSpeakerC2SPacket type, NetworkManager.PacketContext packetContext) {
 
-        ScreenHandler screenHandler = player.currentScreenHandler;
+        ServerPlayer player = (ServerPlayer) packetContext.getPlayer();
 
-        if (!(screenHandler instanceof SpeakerScreenHandler speakerScreenHandler)) {
+        boolean activate = type.activate();
+
+        AbstractContainerMenu menu = player.containerMenu;
+
+        if (!(menu instanceof SpeakerScreenHandler speakerScreenHandler)) {
             return;
         }
 
         speakerScreenHandler.setActivate(activate);
 
 
+    }
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 }

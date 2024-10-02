@@ -1,67 +1,39 @@
 package fr.flaton.walkietalkie.item;
 
 import fr.flaton.walkietalkie.client.gui.screen.WalkieTalkieScreen;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.world.World;
-
-import java.util.Objects;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 
 public class WalkieTalkieItem extends Item {
 
     private final int RANGE;
 
-    private static final String NBT_KEY_CANAL = "walkietalkie.canal";
-    private static final String NBT_KEY_MUTE = "walkietalkie.mute";
-    private static final String NBT_KEY_ACTIVATE = "walkietalkie.activate";
 
-
-    public WalkieTalkieItem(Settings settings, int range) {
+    public WalkieTalkieItem(net.minecraft.world.item.Item.Properties settings, int range) {
         super(settings);
         RANGE = range;
     }
 
 
     @Override
-    public TypedActionResult<ItemStack> use(World world, PlayerEntity player, Hand hand) {
+    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
 
-        if (world.isClient()) {
-            if (player.getStackInHand(hand).hasNbt()) {
+        if (level.isClientSide()) {
+            ItemStack stack = player.getItemInHand(hand);
 
-                ItemStack stack = player.getStackInHand(hand);
-
-                new WalkieTalkieScreen(stack);
-                return TypedActionResult.success(stack);
-            }
+            new WalkieTalkieScreen(stack);
+            return InteractionResultHolder.success(stack);
         }
 
-        return super.use(world, player, hand);
-    }
-
-
-    @Override
-    public void inventoryTick(ItemStack stack, World world, Entity entity, int slot, boolean selected) {
-        if (world.isClient()) {
-            return;
-        }
-
-        if (!stack.hasNbt()) {
-            NbtCompound nbtCompound = new NbtCompound();
-            nbtCompound.putBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE, false);
-            nbtCompound.putBoolean(WalkieTalkieItem.NBT_KEY_MUTE, false);
-            nbtCompound.putInt(WalkieTalkieItem.NBT_KEY_CANAL, 1);
-            stack.setNbt(nbtCompound);
-        }
-
+        return super.use(level, player, hand);
     }
 
     public static int getCanal(ItemStack stack) {
-        return Objects.requireNonNull(stack.getNbt()).getInt(NBT_KEY_CANAL);
+        return stack.getOrDefault(ModDataComponents.CANAL.get(), 1);
     }
 
     public static int getRange(ItemStack stack) {
@@ -76,23 +48,23 @@ public class WalkieTalkieItem extends Item {
     }
 
     public static boolean isActivate(ItemStack stack) {
-        return Objects.requireNonNull(stack.getNbt()).getBoolean(NBT_KEY_ACTIVATE);
+        return stack.getOrDefault(ModDataComponents.ACTIVATE.get(), false);
     }
 
     public static boolean isMute(ItemStack stack) {
-        return Objects.requireNonNull(stack.getNbt()).getBoolean(NBT_KEY_MUTE);
+        return stack.getOrDefault(ModDataComponents.MUTE.get(), false);
     }
 
     public static void setCanal(ItemStack stack, int canal) {
-        stack.getNbt().putInt(NBT_KEY_CANAL, canal);
+        stack.set(ModDataComponents.CANAL.get(), canal);
     }
 
     public static void setActivate(ItemStack stack, boolean activate) {
-        stack.getNbt().putBoolean(NBT_KEY_ACTIVATE, activate);
+        stack.set(ModDataComponents.ACTIVATE.get(), activate);
     }
 
     public static void setMute(ItemStack stack, boolean mute) {
-        stack.getNbt().putBoolean(NBT_KEY_MUTE, mute);
+        stack.set(ModDataComponents.MUTE.get(), mute);
     }
 
 

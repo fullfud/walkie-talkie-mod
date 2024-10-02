@@ -7,7 +7,7 @@
   ],
   "key": {
     "#": {
-      "tag": "minecraft:planks"
+      "item": "minecraft:diamond"
     },
     "r": {
       "item": "minecraft:redstone"
@@ -20,6 +20,6 @@
     }
   },
   "result": {
-    "item": "walkietalkie:wooden_walkietalkie"
+    "id": "walkietalkie:diamond_walkietalkie"
   }
 }

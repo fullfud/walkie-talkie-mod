@@ -10,6 +10,6 @@
     "item": "minecraft:netherite_ingot"
   },
   "result": {
-    "item": "walkietalkie:netherite_walkietalkie"
+    "id": "walkietalkie:netherite_walkietalkie"
   }
 }

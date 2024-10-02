@@ -1,7 +1,7 @@
 {
   "display": {
     "icon": {
-      "item": "walkietalkie:netherite_walkietalkie"
+      "id": "walkietalkie:netherite_walkietalkie"
     },
     "title": {
       "translate": "advancement.walkietalkie.netherite_walkietalkie.title"
@@ -20,9 +20,7 @@
       "conditions": {
         "items": [
           {
-            "items": [
-              "walkietalkie:netherite_walkietalkie"
-            ]
+            "items": "walkietalkie:netherite_walkietalkie"
           }
         ]
       }

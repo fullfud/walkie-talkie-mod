@@ -1,28 +1,26 @@
 {
   "display": {
     "icon": {
-      "item": "walkietalkie:golden_walkietalkie"
+      "id": "walkietalkie:iron_walkietalkie"
     },
     "title": {
-      "translate": "advancement.walkietalkie.golden_walkietalkie.title"
+      "translate": "advancement.walkietalkie.iron_walkietalkie.title"
     },
     "description": {
-      "translate": "advancement.walkietalkie.golden_walkietalkie.description"
+      "translate": "advancement.walkietalkie.iron_walkietalkie.description"
     },
     "frame": "task",
     "show_toast": true,
     "announce_to_chat": true
   },
-  "parent": "walkietalkie:walkietalkie/iron_walkietalkie",
+  "parent": "walkietalkie:walkietalkie/stone_walkietalkie",
   "criteria": {
     "requirement": {
       "trigger": "minecraft:inventory_changed",
       "conditions": {
         "items": [
           {
-            "items": [
-              "walkietalkie:golden_walkietalkie"
-            ]
+            "items": "walkietalkie:iron_walkietalkie"
           }
         ]
       }
