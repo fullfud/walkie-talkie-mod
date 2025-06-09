@@ -1,9 +1,13 @@
+// Файл: SpeakerBlockEntity.java (ФИНАЛЬНАЯ ВЕРСИЯ)
+
 package fr.flaton.walkietalkie.block.entity;
 
 import de.maxhenkel.voicechat.api.Position;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
+import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
 import de.maxhenkel.voicechat.api.audiochannel.LocationalAudioChannel;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
+import de.maxhenkel.voicechat.api.packets.StaticSoundPacket;
 import fr.flaton.walkietalkie.Util;
 import fr.flaton.walkietalkie.WalkieTalkieVoiceChatPlugin;
 import fr.flaton.walkietalkie.config.ModConfig;
@@ -14,6 +18,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.screen.*;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -36,14 +41,12 @@ public class SpeakerBlockEntity extends BlockEntity implements NamedScreenHandle
     boolean activated;
     int canal = 1;
 
-    private final UUID channelId;
+    // Оставляем твою логику кэширования канала
     private LocationalAudioChannel channel = null;
 
     public SpeakerBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.SPEAKER.get(), pos, state);
         speakerBlockEntities.add(this);
-
-        channelId = UUID.randomUUID();
 
         this.propertyDelegate = new PropertyDelegate() {
             @Override
@@ -72,6 +75,7 @@ public class SpeakerBlockEntity extends BlockEntity implements NamedScreenHandle
         };
     }
 
+    // --- ОСТАЛЬНАЯ ЧАСТЬ ТВОЕГО КЛАССА БЕЗ ИЗМЕНЕНИЙ ---
     @Override
     public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
         return new SpeakerScreenHandler(syncId, this.propertyDelegate, ScreenHandlerContext.create(this.world, this.getPos()));
@@ -103,58 +107,81 @@ public class SpeakerBlockEntity extends BlockEntity implements NamedScreenHandle
 
     public static List<SpeakerBlockEntity> getSpeakersActivatedInRange(int canal, World world, Vec3d pos, int range) {
         speakerBlockEntities.removeIf(BlockEntity::isRemoved);
-
         List<SpeakerBlockEntity> list = new ArrayList<>();
-
         for (SpeakerBlockEntity speaker : speakerBlockEntities) {
-
             if (!speaker.hasWorld()) {
                 continue;
             }
-
             if (!ModConfig.crossDimensionsEnabled
                     && !world.getRegistryKey().getRegistry().equals(speaker.getWorld().getRegistryKey().getRegistry())) {
                 continue;
             }
-
             if (!speaker.canBroadcastToSpeaker(world, pos, speaker, range)) {
                 continue;
             }
-
             if (speaker.activated) {
                 if (speaker.canal == canal) {
                     list.add(speaker);
                 }
             }
         }
-
         return list;
     }
 
-    public void playSound(VoicechatServerApi api, MicrophonePacketEvent event) {
-        Position pos = api.createPosition(this.getPos().getX(), this.getPos().getY(), this.getPos().getZ());
+    private boolean canBroadcastToSpeaker(World senderWorld, Vec3d senderPos, SpeakerBlockEntity speaker, int range) {
+        World receiverWorld = speaker.getWorld();
+        if (receiverWorld == null) {
+            return false;
+        }
+        return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPos, speaker.pos.toCenterPos(), range);
+    }
 
+    // --- КОНЕЦ НЕИЗМЕНЕННОЙ ЧАСТИ ---
+
+
+    /**
+     * Старый метод. Он может понадобиться, если где-то еще используется,
+     * поэтому мы его оставляем. Но наша новая логика его не вызывает.
+     */
+    public void playSound(VoicechatServerApi api, MicrophonePacketEvent event) {
         if (this.channel == null) {
-            this.channel = api.createLocationalAudioChannel(this.channelId, api.fromServerLevel(this.world), pos);
+            if (world == null || api == null) return;
+            Position pos = api.createPosition(this.getPos().getX() + 0.5D, this.getPos().getY() + 0.5D, this.getPos().getZ() + 0.5D);
+            this.channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(this.world), pos);
             if (this.channel == null) {
                 return;
             }
             this.channel.setCategory(WalkieTalkieVoiceChatPlugin.SPEAKER_CATEGORY);
             this.channel.setDistance(ModConfig.speakerDistance + 1F);
-            if (!ModConfig.voiceDuplication) {
+            if (!ModConfig.voiceDuplication && event.getSenderConnection() != null) {
                 this.channel.setFilter(serverPlayer -> !serverPlayer.getEntity().equals(event.getSenderConnection().getPlayer().getEntity()));
             }
         }
         this.channel.send(event.getPacket().getOpusEncodedData());
     }
 
-    private boolean canBroadcastToSpeaker(World senderWorld, Vec3d senderPos, SpeakerBlockEntity speaker, int range) {
-        World receiverWorld = speaker.getWorld();
-
-        if (receiverWorld == null) {
-            return false;
+    /**
+     * НОВЫЙ МЕТОД для проигрывания зашумленного звука из StaticSoundPacket.
+     * Он использует твою же логику кэширования канала.
+     */
+    public void playSound(VoicechatServerApi api, StaticSoundPacket packet, ServerPlayerEntity sender) {
+        if (this.channel == null) {
+            if (world == null || api == null) return;
+            Position pos = api.createPosition(this.getPos().getX() + 0.5D, this.getPos().getY() + 0.5D, this.getPos().getZ() + 0.5D);
+            // Используем UUID.randomUUID() как и в твоем старом методе, чтобы создать уникальный канал
+            this.channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(this.world), pos);
+            if (this.channel == null) {
+                return;
+            }
+            this.channel.setCategory(WalkieTalkieVoiceChatPlugin.SPEAKER_CATEGORY);
+            this.channel.setDistance(ModConfig.speakerDistance + 1F);
+            if (!ModConfig.voiceDuplication) {
+                // Применяем фильтр, чтобы говорящий не слышал сам себя из динамика
+                this.channel.setFilter(serverPlayer -> !serverPlayer.equals(sender));
+            }
         }
-
-        return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPos, speaker.pos.toCenterPos(), range);
+        // Создаем AudioPlayer для проигрывания нашего готового пакета
+        AudioPlayer audioPlayer = api.createAudioPlayer(this.channel, api.createEncoder(), packet.getOpusEncodedData());
+        audioPlayer.startPlaying();
     }
 }
