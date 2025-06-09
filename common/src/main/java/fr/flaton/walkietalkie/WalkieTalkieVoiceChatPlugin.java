@@ -1,13 +1,15 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (Полная версия)
+// Файл: WalkieTalkieVoiceChatPlugin.java (ПОЛНАЯ ФИНАЛЬНАЯ ВЕРСИЯ)
 
 package fr.flaton.walkietalkie;
 
-import de.maxhenkel.voicechat.api.*;
+import de.maxhenkel.voicechat.api.VoicechatConnection;
+import de.maxhenkel.voicechat.api.VoicechatServerApi;
+import de.maxhenkel.voicechat.api.audiochannel.AudioChannel;
+import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
-import de.maxhenkel.voicechat.api.packets.MicrophonePacket;
-import de.maxhenkel.voicechat.api.packets.StaticSoundPacket;
+import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
@@ -24,7 +26,6 @@ import java.util.Enumeration;
 import java.util.Objects;
 import java.util.Random;
 
-@ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     public final static String SPEAKER_CATEGORY = "speakers";
@@ -77,22 +78,21 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         return null;
     }
 
-    private byte[] addWhiteNoise(byte[] opusData, float intensity) {
-        if (opusData.length == 0) {
-            return opusData;
+    private short[] addWhiteNoise(short[] rawAudio, float intensity) {
+        if (rawAudio.length == 0) {
+            return rawAudio;
         }
-        byte[] noisyData = new byte[opusData.length];
-        System.arraycopy(opusData, 0, noisyData, 0, opusData.length);
-        int noiseAmount = (int) (opusData.length * intensity);
-        for (int i = 0; i < noiseAmount; i++) {
-            int randomIndex = random.nextInt(opusData.length);
-            noisyData[randomIndex] = (byte) (random.nextInt(256) - 128);
+        short[] noisyAudio = new short[rawAudio.length];
+        for (int i = 0; i < rawAudio.length; i++) {
+            int noise = (int) ((random.nextFloat() * 2 - 1) * Short.MAX_VALUE * intensity);
+            int newSample = rawAudio[i] + noise;
+            noisyAudio[i] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, newSample));
         }
-        return noisyData;
+        return noisyAudio;
     }
 
     private void onMicPacket(MicrophonePacketEvent event) {
-        if (event.getSenderConnection() == null) {
+        if (api == null || event.getSenderConnection() == null) {
             return;
         }
 
@@ -108,38 +108,31 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
         event.cancel();
         
-        MicrophonePacket packet = event.getPacket();
-        byte[] originalOpusData = packet.getOpusEncodedData();
-
-        if (originalOpusData.length == 0) {
+        byte[] opusData = event.getPacket().getOpusEncodedData();
+        if (opusData.length == 0) {
             return;
         }
-        
-        float noiseIntensity = 0.15f; // Можешь изменить это значение
-        byte[] noisyOpusData = addWhiteNoise(originalOpusData, noiseIntensity);
 
-        // Создаем новый пакет с зашумленными данными
-        StaticSoundPacket noisyPacket = api.createStaticSoundPacketBuilder()
-                .setOpusEncodedData(noisyOpusData)
-                .setCategory(SPEAKER_CATEGORY)
-                .build();
+        // --- ДЕКОДИРОВАНИЕ ---
+        OpusDecoder decoder = api.createDecoder();
+        short[] rawAudio = decoder.decode(opusData);
+        decoder.close();
+        // ---------------------
+        
+        float noiseIntensity = 0.05f; // Для raw-звука интенсивность нужна намного меньше
+        short[] noisyRawAudio = addWhiteNoise(rawAudio, noiseIntensity);
         
         int senderCanal = getCanal(senderItemStack);
-
+        
         // Отправляем на динамики
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
-                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, noisyPacket, senderPlayer));
+                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, noisyRawAudio, senderPlayer));
 
         // Отправляем другим игрокам
         for (PlayerEntity receiverPlayerEntity : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
-            if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer)) {
+            if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer) || receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
                 continue;
             }
-
-            if (receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
-                continue;
-            }
-            
             if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) {
                 continue;
             }
@@ -147,15 +140,18 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             if (receiverStack == null) {
                 continue;
             }
-            int receiverRange = getRange(receiverStack);
-            int receiverCanal = getCanal(receiverStack);
-            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, receiverRange) || receiverCanal != senderCanal) {
+            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) {
                 continue;
             }
 
             VoicechatConnection connection = api.getConnectionOf(receiverPlayer.getUuid());
             if (connection != null) {
-                api.sendStaticSoundPacketTo(connection, noisyPacket);
+                // Создаем персональный аудиоканал для получателя и проигрываем в нем звук
+                AudioChannel channel = api.createPlayerAudioChannel(connection);
+                if (channel != null) {
+                    AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudio);
+                    player.startPlaying();
+                }
             }
         }
     }
