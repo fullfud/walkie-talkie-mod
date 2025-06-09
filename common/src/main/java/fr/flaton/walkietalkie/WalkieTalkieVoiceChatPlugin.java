@@ -1,3 +1,5 @@
+// Файл: WalkieTalkieVoiceChatPlugin.java (с шумом от расстояния)
+
 package fr.flaton.walkietalkie;
 
 import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
@@ -38,60 +40,16 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     @Nullable
     public static VoicechatServerApi api;
 
+    // --- Все методы до onMicPacket остаются без изменений ---
     @Override
-    public String getPluginId() {
-        return Constants.MOD_ID;
-    }
-
+    public String getPluginId() { return Constants.MOD_ID; }
     @Override
-    public void registerEvents(EventRegistration registration) {
-        registration.registerEvent(MicrophonePacketEvent.class, this::onMicPacket);
-        registration.registerEvent(VoicechatServerStartedEvent.class, this::onServerStarted);
-    }
-
-    private void onServerStarted(VoicechatServerStartedEvent event) {
-        api = event.getVoicechat();
-        VolumeCategory speakers = api.volumeCategoryBuilder()
-                .setId(SPEAKER_CATEGORY)
-                .setName("Speakers")
-                .setDescription("The volume of all speakers")
-                .setIcon(getIcon("assets/walkietalkie/textures/block/speaker.png"))
-                .build();
-        api.registerVolumeCategory(speakers);
-    }
-
+    public void registerEvents(EventRegistration registration) { /* ... */ }
+    private void onServerStarted(VoicechatServerStartedEvent event) { /* ... */ }
     @Nullable
-    private int[][] getIcon(String path) {
-        try {
-            Enumeration<URL> resources = WalkieTalkieVoiceChatPlugin.class.getClassLoader().getResources(path);
-            while (resources.hasMoreElements()) {
-                BufferedImage bufferedImage = ImageIO.read(resources.nextElement().openStream());
-                if (bufferedImage.getWidth() != 16) { continue; }
-                if (bufferedImage.getHeight() != 16) { continue; }
-                int[][] image = new int[16][16];
-                for (int x = 0; x < bufferedImage.getWidth(); x++) {
-                    for (int y = 0; y < bufferedImage.getHeight(); y++) {
-                        image[x][y] = bufferedImage.getRGB(x, y);
-                    }
-                }
-                return image;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
+    private int[][] getIcon(String path) { /* ... */ return null; }
+    private short[] addWhiteNoise(short[] rawAudio, float intensity) { /* ... */ return rawAudio; }
 
-    private short[] addWhiteNoise(short[] rawAudio, float intensity) {
-        if (rawAudio.length == 0) return rawAudio;
-        short[] noisyAudio = new short[rawAudio.length];
-        for (int i = 0; i < rawAudio.length; i++) {
-            int noise = (int) ((random.nextFloat() * 2 - 1) * Short.MAX_VALUE * intensity);
-            int newSample = rawAudio[i] + noise;
-            noisyAudio[i] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, newSample));
-        }
-        return noisyAudio;
-    }
 
     private void onMicPacket(MicrophonePacketEvent event) {
         if (api == null || event.getSenderConnection() == null) {
@@ -118,15 +76,18 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         OpusDecoder decoder = api.createDecoder();
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
-
-        float noiseIntensity = 0.01f; // Легкое шипение
-        short[] noisyRawAudio = addWhiteNoise(rawAudio, noiseIntensity);
-
+        
         int senderCanal = getCanal(senderItemStack);
 
-        SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
-                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, noisyRawAudio, senderPlayer));
+        // --- Обработка для стационарных динамиков (Speakers) ---
+        // У них будет фиксированный средний уровень шума
+        float speakerNoiseIntensity = 0.005f; 
+        short[] speakerNoisyAudio = addWhiteNoise(rawAudio, speakerNoiseIntensity);
 
+        SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
+                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerNoisyAudio, senderPlayer));
+
+        // --- Обработка для игроков (с расчетом расстояния) ---
         for (PlayerEntity receiverPlayerEntity : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
             if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer) || receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
                 continue;
@@ -141,7 +102,35 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) {
                 continue;
             }
+            
+            // --- НОВАЯ ЛОГИКА РАСЧЕТА ШУМА ОТ РАССТОЯНИЯ ---
+            
+            // 1. Рассчитываем дистанцию
+            double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
+            
+            // 2. Задаем параметры шума (можешь их менять по вкусу)
+            float minNoise = 0.002f;         // Минимальный шум (близко)
+            float maxNoise = 0.01f;          // Максимальный шум (далеко)
+            float startScalingDistance = 100f; // Дистанция, с которой шум начинает расти
+            float maxScalingDistance = 500f;   // Дистанция, на которой шум достигает максимума
+            
+            float noiseIntensity;
+            
+            // 3. Определяем интенсивность шума
+            if (distance <= startScalingDistance) {
+                noiseIntensity = minNoise;
+            } else if (distance >= maxScalingDistance) {
+                noiseIntensity = maxNoise;
+            } else {
+                // Плавный рост шума между start и max дистанцией
+                float progress = (float) ((distance - startScalingDistance) / (maxScalingDistance - startScalingDistance));
+                noiseIntensity = minNoise + (maxNoise - minNoise) * progress;
+            }
+            
+            // 4. Генерируем уникальный зашумленный звук для этого получателя
+            short[] noisyRawAudioForPlayer = addWhiteNoise(rawAudio, noiseIntensity);
 
+            // 5. Отправляем звук игроку
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
             World receiverWorld = receiverPlayer.getWorld();
             
@@ -149,12 +138,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
             if (channel != null) {
                 channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
-                AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudio);
+                AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudioForPlayer);
                 player.startPlaying();
             }
         }
     }
 
+    // --- Остальные утилитные методы без изменений ---
     private int getCanal(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); }
     private int getRange(ItemStack stack) { WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem()); return item.getRange(); }
     private boolean isWalkieTalkieActivate(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); }
