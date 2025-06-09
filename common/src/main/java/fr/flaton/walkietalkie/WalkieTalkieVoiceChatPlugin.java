@@ -1,15 +1,15 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (ПОЛНАЯ ВЕРСИЯ СО ВСЕМИ ИМПОРТАМИ)
+// Файл: WalkieTalkieVoiceChatPlugin.java (ФИНАЛЬНАЯ ВЕРСИЯ, ИСПРАВЛЕННАЯ)
 
 package fr.flaton.walkietalkie;
 
-// --- ПОЛНЫЙ И ПРАВИЛЬНЫЙ СПИСОК ИМПОРТОВ ---
 import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
+import de.maxhenkel.voicechat.api.Position;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import de.maxhenkel.voicechat.api.VolumeCategory;
-import de.maxhenkel.voicechat.api.audiochannel.AudioChannel;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
+import de.maxhenkel.voicechat.api.audiochannel.LocationalAudioChannel;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
@@ -19,6 +19,7 @@ import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
@@ -29,7 +30,7 @@ import java.net.URL;
 import java.util.Enumeration;
 import java.util.Objects;
 import java.util.Random;
-// -------------------------------------------
+import java.util.UUID;
 
 @ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
@@ -50,7 +51,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         registration.registerEvent(MicrophonePacketEvent.class, this::onMicPacket);
         registration.registerEvent(VoicechatServerStartedEvent.class, this::onServerStarted);
     }
-    
+
     private void onServerStarted(VoicechatServerStartedEvent event) {
         api = event.getVoicechat();
         VolumeCategory speakers = api.volumeCategoryBuilder()
@@ -113,7 +114,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         }
 
         event.cancel();
-        
+
         byte[] opusData = event.getPacket().getOpusEncodedData();
         if (opusData.length == 0) {
             return;
@@ -122,12 +123,12 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         OpusDecoder decoder = api.createDecoder();
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
-        
+
         float noiseIntensity = 0.05f;
         short[] noisyRawAudio = addWhiteNoise(rawAudio, noiseIntensity);
-        
+
         int senderCanal = getCanal(senderItemStack);
-        
+
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
                 .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, noisyRawAudio, senderPlayer));
 
@@ -146,37 +147,47 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 continue;
             }
 
-            VoicechatConnection connection = api.getConnectionOf(receiverPlayer.getUuid());
-            if (connection != null) {
-                AudioChannel channel = api.createPlayerAudioChannel(connection);
-                if (channel != null) {
-                    AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudio);
-                    player.startPlaying();
-                }
+            // --- ИСПРАВЛЕННАЯ ЛОГИКА ОТПРАВКИ ---
+            // Вместо createPlayerAudioChannel, создаем канал в позиции игрока-получателя
+            Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
+
+            // Убеждаемся, что мы правильно получаем ServerLevel
+            if (!(receiverPlayer.getWorld() instanceof ServerLevel receiverLevel)) {
+                continue;
             }
+
+            LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverLevel), receiverPosition);
+
+            if (channel != null) {
+                // ВАЖНО: Устанавливаем фильтр, чтобы звук слышал ТОЛЬКО игрок-получатель.
+                channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
+                AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudio);
+                player.startPlaying();
+            }
+            // ---------------------------------
         }
     }
-    
-    private int getCanal(ItemStack stack) { 
-        return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); 
+
+    private int getCanal(ItemStack stack) {
+        return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL);
     }
 
-    private int getRange(ItemStack stack) { 
-        WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem()); 
-        return item.getRange(); 
+    private int getRange(ItemStack stack) {
+        WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem());
+        return item.getRange();
     }
 
-    private boolean isWalkieTalkieActivate(ItemStack stack) { 
-        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); 
+    private boolean isWalkieTalkieActivate(ItemStack stack) {
+        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE);
     }
 
-    private boolean isWalkieTalkieMute(ItemStack stack) { 
-        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE); 
+    private boolean isWalkieTalkieMute(ItemStack stack) {
+        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE);
     }
 
-    private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) { 
-        World senderWorld = senderPlayer.getWorld(); 
-        World receiverWorld = receiverPlayer.getWorld(); 
-        return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange); 
+    private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) {
+        World senderWorld = senderPlayer.getWorld();
+        World receiverWorld = receiverPlayer.getWorld();
+        return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange);
     }
 }
