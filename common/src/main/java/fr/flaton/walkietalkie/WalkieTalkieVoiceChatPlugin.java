@@ -1,5 +1,3 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (ФИНАЛЬНАЯ ВЕРСИЯ, ИСПРАВЛЕННАЯ)
-
 package fr.flaton.walkietalkie;
 
 import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
@@ -19,7 +17,6 @@ import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
@@ -86,9 +83,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     }
 
     private short[] addWhiteNoise(short[] rawAudio, float intensity) {
-        if (rawAudio.length == 0) {
-            return rawAudio;
-        }
+        if (rawAudio.length == 0) return rawAudio;
         short[] noisyAudio = new short[rawAudio.length];
         for (int i = 0; i < rawAudio.length; i++) {
             int noise = (int) ((random.nextFloat() * 2 - 1) * Short.MAX_VALUE * intensity);
@@ -147,47 +142,22 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 continue;
             }
 
-            // --- ИСПРАВЛЕННАЯ ЛОГИКА ОТПРАВКИ ---
-            // Вместо createPlayerAudioChannel, создаем канал в позиции игрока-получателя
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
-
-            // Убеждаемся, что мы правильно получаем ServerLevel
-            if (!(receiverPlayer.getWorld() instanceof ServerLevel receiverLevel)) {
-                continue;
-            }
-
-            LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverLevel), receiverPosition);
+            World receiverWorld = receiverPlayer.getWorld();
+            
+            LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverWorld), receiverPosition);
 
             if (channel != null) {
-                // ВАЖНО: Устанавливаем фильтр, чтобы звук слышал ТОЛЬКО игрок-получатель.
                 channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
                 AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudio);
                 player.startPlaying();
             }
-            // ---------------------------------
         }
     }
 
-    private int getCanal(ItemStack stack) {
-        return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL);
-    }
-
-    private int getRange(ItemStack stack) {
-        WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem());
-        return item.getRange();
-    }
-
-    private boolean isWalkieTalkieActivate(ItemStack stack) {
-        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE);
-    }
-
-    private boolean isWalkieTalkieMute(ItemStack stack) {
-        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE);
-    }
-
-    private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) {
-        World senderWorld = senderPlayer.getWorld();
-        World receiverWorld = receiverPlayer.getWorld();
-        return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange);
-    }
+    private int getCanal(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); }
+    private int getRange(ItemStack stack) { WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem()); return item.getRange(); }
+    private boolean isWalkieTalkieActivate(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); }
+    private boolean isWalkieTalkieMute(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE); }
+    private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) { World senderWorld = senderPlayer.getWorld(); World receiverWorld = receiverPlayer.getWorld(); return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange); }
 }
