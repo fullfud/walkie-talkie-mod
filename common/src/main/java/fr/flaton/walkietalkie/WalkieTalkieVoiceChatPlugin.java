@@ -1,9 +1,14 @@
+// Файл: WalkieTalkieVoiceChatPlugin.java
+// Замени всё содержимое своего файла на этот код
+
 package fr.flaton.walkietalkie;
 
 import de.maxhenkel.voicechat.api.*;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
+import de.maxhenkel.voicechat.api.packets.MicrophonePacket;
+import de.maxhenkel.voicechat.api.packets.StaticSoundPacket;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
@@ -19,11 +24,13 @@ import java.awt.image.BufferedImage;
 import java.net.URL;
 import java.util.Enumeration;
 import java.util.Objects;
+import java.util.Random; // <-- ДОБАВЛЕНО
 
 @ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     public final static String SPEAKER_CATEGORY = "speakers";
+    private static final Random random = new Random(); // <-- ДОБАВЛЕНО
 
     @Nullable
     public static VoicechatServerApi api;
@@ -35,6 +42,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     @Override
     public void registerEvents(EventRegistration registration) {
+        // Мы будем использовать событие с возможностью изменения пакета
         registration.registerEvent(MicrophonePacketEvent.class, this::onMicPacket);
         registration.registerEvent(VoicechatServerStartedEvent.class, this::onServerStarted);
     }
@@ -78,6 +86,35 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         return null;
     }
 
+    // ==========================================================================================
+    // НОВЫЙ МЕТОД ДЛЯ ДОБАВЛЕНИЯ ШУМА
+    // ==========================================================================================
+    /**
+     * Добавляет случайный шум в закодированные Opus аудиоданные.
+     * @param opusData исходные аудиоданные.
+     * @param intensity интенсивность шума (например, 0.1f для 10% шума).
+     * @return аудиоданные с добавленным шумом.
+     */
+    private byte[] addWhiteNoise(byte[] opusData, float intensity) {
+        // Не добавляем шум в "пустые" пакеты (которые означают конец передачи)
+        if (opusData.length == 0) {
+            return opusData;
+        }
+
+        byte[] noisyData = new byte[opusData.length];
+        System.arraycopy(opusData, 0, noisyData, 0, opusData.length);
+
+        // Добавляем шум к случайным байтам в пакете
+        int noiseAmount = (int) (opusData.length * intensity);
+        for (int i = 0; i < noiseAmount; i++) {
+            int randomIndex = random.nextInt(opusData.length);
+            byte noise = (byte) (random.nextInt(256) - 128); // Случайный байт
+            noisyData[randomIndex] = noise;
+        }
+
+        return noisyData;
+    }
+
     private void onMicPacket(MicrophonePacketEvent event) {
         VoicechatConnection senderConnection = event.getSenderConnection();
 
@@ -91,23 +128,43 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
         ItemStack senderItemStack = Util.getWalkieTalkieInHand(senderPlayer);
 
-        if (senderItemStack == null) {
+        if (senderItemStack == null || !isWalkieTalkieActivate(senderItemStack) || isWalkieTalkieMute(senderItemStack)) {
             return;
         }
 
-        if (!isWalkieTalkieActivate(senderItemStack)) {
-            return;
-        }
+        // ==========================================================================================
+        // ГЛАВНЫЕ ИЗМЕНЕНИЯ ЗДЕСЬ
+        // ==========================================================================================
+        
+        // 1. Отменяем исходное событие. Мы сами решим, кому и какой пакет отправлять.
+        event.cancel();
 
-        if (isWalkieTalkieMute(senderItemStack)) {
-            return;
-        }
+        // 2. Получаем исходные аудиоданные
+        byte[] originalOpusData = event.getPacket().getOpusEncodedAudio();
+
+        // 3. Создаем "зашумленную" версию аудио.
+        // Можешь поиграть с этим значением или вынести его в конфиг! 0.15f - это 15% шума.
+        float noiseIntensity = 0.15f; 
+        byte[] noisyOpusData = addWhiteNoise(originalOpusData, noiseIntensity);
+        
+        // 4. Создаем новый, измененный пакет на основе старого
+        StaticSoundPacket noisyPacket = event.getPacket().staticSoundPacketBuilder()
+                .setOpusEncodedAudio(noisyOpusData)
+                .build();
+        
+        // ==========================================================================================
 
         int senderCanal = getCanal(senderItemStack);
 
+        // Отправляем зашумленный звук на все динамики
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
-                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, event));
+                .forEach(speakerBlockEntity -> {
+                    // Для динамиков можно отправить оригинальный или зашумленный пакет.
+                    // Оставим зашумленный для консистентности.
+                    speakerBlockEntity.playSound(api, noisyPacket, senderConnection.getPlayer());
+                });
 
+        // Отправляем зашумленный звук всем игрокам с рациями
         for (PlayerEntity receiverPlayer : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
 
             if (receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
@@ -127,25 +184,19 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             int receiverRange = getRange(receiverStack);
             int receiverCanal = getCanal(receiverStack);
 
-            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, receiverRange)) {
+            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, receiverRange) || receiverCanal != senderCanal) {
                 continue;
             }
 
-            if (receiverCanal != senderCanal) {
-                continue;
-            }
-
-            // Send audio
             VoicechatConnection connection = api.getConnectionOf(receiverPlayer.getUuid());
             if (connection == null) {
                 continue;
             }
-
-            api.sendStaticSoundPacketTo(connection, event.getPacket().staticSoundPacketBuilder().build());
+            
+            // Отправляем наш новый, измененный пакет
+            api.sendStaticSoundPacketTo(connection, noisyPacket);
         }
     }
-
-
 
     private int getCanal(ItemStack stack) {
         return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL);
