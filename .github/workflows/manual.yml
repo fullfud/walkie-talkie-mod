@@ -1,0 +1,54 @@
+name: Manual Build for 1.20.1
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # НОВЫЙ ДИАГНОСТИЧЕСКИЙ БЛОК
+      - name: Verify Workspace Contents
+        run: |
+          echo "--- Проверяем текущую директорию ---"
+          pwd
+          echo "--- Проверяем содержимое директории (ls -la) ---"
+          ls -la
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build Release JARs
+        run: ./gradlew remapJar
+
+      - name: List files for debugging
+        run: ls -R .
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: walkietalkie-1.20.1-build-${{ github.run_number }}
+          path: |
+            */build/libs/*.jar
+            !*/build/libs/*-dev-shadow.jar
+            !*/build/libs/*-sources.jar
