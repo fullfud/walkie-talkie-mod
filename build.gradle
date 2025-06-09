@@ -1,6 +1,8 @@
 plugins {
-    id "architectury-plugin" version "3.4-SNAPSHOT"
-    id "dev.architectury.loom" version "1.5-SNAPSHOT" apply false
+    // ЗАМЕНЕНА: 3.4-SNAPSHOT -> 3.4.108
+    id "architectury-plugin" version "3.4.108"
+    // ЗАМЕНЕНА: 1.5-SNAPSHOT -> 1.6.14 (современная стабильная версия)
+    id "dev.architectury.loom" version "1.6.14" apply false
 }
 
 architectury {
@@ -10,10 +12,19 @@ architectury {
 subprojects {
     apply plugin: "dev.architectury.loom"
 
+    // Добавляем репозиторий Architectury сюда, чтобы Loom мог найти все необходимое
+    repositories {
+        maven {
+            name = "Architectury"
+            url = "https://maven.architectury.dev/"
+        }
+    }
+
     dependencies {
         minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
         mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
 
+        // Версия voicechat_api_version (2.3.3) у тебя уже стабильная, ее не трогаем
         implementation "de.maxhenkel.voicechat:voicechat-api:${rootProject.voicechat_api_version}"
     }
 
