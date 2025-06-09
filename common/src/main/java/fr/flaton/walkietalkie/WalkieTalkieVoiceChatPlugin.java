@@ -1,4 +1,4 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (ПОЛНАЯ ВЕРСИЯ С ЗВУКАМИ НАЧАЛА/КОНЦА)
+// Файл: WalkieTalkieVoiceChatPlugin.java (Твоя версия на 400+ строк, исправленная)
 
 package fr.flaton.walkietalkie;
 
@@ -17,12 +17,16 @@ import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
-import fr.flaton.walkietalkie.sound.ModSoundEvents;
+// import fr.flaton.walkietalkie.sound.ModSoundEvents; // ИСПРАВЛЕНО: Этот импорт вызывал ошибку, так как ты используешь Identifier
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.Identifier;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.Registries;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,22 +41,28 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     public final static String SPEAKER_CATEGORY = "speakers";
     private static final Random random = new Random();
-    
-    // Частота дискретизации VoiceChat
     private static final int SAMPLE_RATE = 48000;
-    
-    // Переменные для фильтров (для каждого потока аудио)
-    private float[] highpassHistory = new float[2];
-    private float[] lowpassHistory = new float[2];
-    private float[] noiseFilterHistory = new float[2];
-    
-    // Отслеживание активных передач для звуков начала/конца
+
+    // Твоя система отслеживания передач
     private final Map<UUID, Long> activeTransmissions = new ConcurrentHashMap<>();
     private final Map<UUID, Set<UUID>> transmissionReceivers = new ConcurrentHashMap<>();
-    private static final long TRANSMISSION_TIMEOUT = 500; // 500мс тишины = конец передачи
+    private static final long TRANSMISSION_TIMEOUT = 500L;
+    
+    // ИСПРАВЛЕНИЕ: Хранилище состояний фильтров для каждого игрока
+    private final Map<UUID, AudioProcessingState> transmissionStates = new ConcurrentHashMap<>();
 
     @Nullable
     public static VoicechatServerApi api;
+
+    // ИСПРАВЛЕНИЕ: Класс для хранения состояния фильтров для ОДНОЙ передачи
+    private static class AudioProcessingState {
+        float[] highpassHistory = new float[2];
+        float[] lowpassHistory = new float[2];
+        float[] noiseFilterHistory = new float[2];
+        float envelope = 0.0f;
+        float pink = 0;
+        float brown = 0;
+    }
 
     @Override
     public String getPluginId() {
@@ -74,98 +84,82 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 .setIcon(getIcon("assets/walkietalkie/textures/block/speaker.png"))
                 .build();
         api.registerVolumeCategory(speakers);
-        
-        // Запускаем поток для проверки таймаутов передач
         startTransmissionTimeoutChecker();
     }
 
-    // Поток для проверки окончания передач
     private void startTransmissionTimeoutChecker() {
         Thread timeoutChecker = new Thread(() -> {
-            while (api != null) {
+            while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    Thread.sleep(100); // Проверяем каждые 100мс
+                    Thread.sleep(100);
+                    if (api == null) continue;
+
                     long currentTime = System.currentTimeMillis();
-                    
                     activeTransmissions.entrySet().removeIf(entry -> {
                         if (currentTime - entry.getValue() > TRANSMISSION_TIMEOUT) {
-                            // Передача закончилась, воспроизводим звук окончания
                             handleTransmissionEnd(entry.getKey());
                             return true;
                         }
                         return false;
                     });
                 } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     break;
                 }
             }
         });
         timeoutChecker.setDaemon(true);
+        timeoutChecker.setName("WalkieTalkie-Timeout-Checker");
         timeoutChecker.start();
     }
 
-    // Обработка начала передачи
     private void handleTransmissionStart(ServerPlayerEntity sender, Set<ServerPlayerEntity> receivers) {
         UUID senderId = sender.getUuid();
-        
         if (!activeTransmissions.containsKey(senderId)) {
-            // Новая передача - воспроизводим звук начала
+            // ИСПРАВЛЕНИЕ: Создаем новое состояние фильтров для новой передачи
+            transmissionStates.put(senderId, new AudioProcessingState());
             
-            // Звук для отправителя
-            sender.getWorld().playSound(null, sender.getX(), sender.getY(), sender.getZ(),
-                    new Identifier(Constants.MOD_ID, "walkietalkie_on"),
-                    SoundCategory.PLAYERS, 0.5f, 1.0f);
+            SoundEvent startSound = Registries.SOUND_EVENT.get(new Identifier(Constants.MOD_ID, "walkietalkie_on"));
+            if (startSound == null) return;
             
-            // Звук для получателей
+            sender.getWorld().playSound(null, sender.getBlockPos(), startSound, SoundCategory.PLAYERS, 0.5f, 1.0f);
+            
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                receiver.getWorld().playSound(null, receiver.getX(), receiver.getY(), receiver.getZ(),
-                        new Identifier(Constants.MOD_ID, "walkietalkie_on"),
-                        SoundCategory.PLAYERS, 0.5f, 1.0f);
+                receiver.getWorld().playSound(null, receiver.getBlockPos(), startSound, SoundCategory.PLAYERS, 0.5f, 1.0f);
             }
-            
             transmissionReceivers.put(senderId, receiverIds);
         }
-        
         activeTransmissions.put(senderId, System.currentTimeMillis());
     }
 
-    // Обработка конца передачи
     private void handleTransmissionEnd(UUID senderId) {
-        // Находим всех, кто участвовал в передаче
-        Set<UUID> receiverIds = transmissionReceivers.remove(senderId);
+        // ИСПРАВЛЕНИЕ: Удаляем состояние фильтров после окончания передачи
+        transmissionStates.remove(senderId);
         
-        if (receiverIds != null && api != null) {
-            // Воспроизводим звук окончания для всех участников
-            for (UUID playerId : receiverIds) {
-                PlayerEntity player = getPlayerByUuid(playerId);
-                if (player != null) {
-                    player.getWorld().playSound(null, player.getX(), player.getY(), player.getZ(),
-                            new Identifier(Constants.MOD_ID, "walkietalkie_off"),
-                            SoundCategory.PLAYERS, 0.5f, 1.0f);
-                }
-            }
-            
-            // Звук для отправителя
-            PlayerEntity sender = getPlayerByUuid(senderId);
-            if (sender != null) {
-                sender.getWorld().playSound(null, sender.getX(), sender.getY(), sender.getZ(),
-                        new Identifier(Constants.MOD_ID, "walkietalkie_off"),
-                        SoundCategory.PLAYERS, 0.5f, 1.0f);
-            }
-        }
-    }
+        Set<UUID> receiverIds = transmissionReceivers.remove(senderId);
+        if (receiverIds == null) return;
 
-    // Вспомогательный метод для получения игрока по UUID
-    private PlayerEntity getPlayerByUuid(UUID uuid) {
-        if (api == null) return null;
-        for (VoicechatConnection connection : api.getConnectionManager().getConnections()) {
-            if (connection.getPlayer().getUuid().equals(uuid)) {
-                return connection.getPlayer().getPlayer();
-            }
+        SoundEvent stopSound = Registries.SOUND_EVENT.get(new Identifier(Constants.MOD_ID, "walkietalkie_off"));
+        if (stopSound == null) return;
+
+        // Воспроизводим звук для всех участников
+        PlayerEntity sender = getPlayerByUuid(senderId);
+        if (sender != null) {
+            sender.getWorld().playSound(null, sender.getBlockPos(), stopSound, SoundCategory.PLAYERS, 0.5f, 1.0f);
         }
-        return null;
+        receiverIds.forEach(uuid -> {
+            PlayerEntity player = getPlayerByUuid(uuid);
+            if (player != null) {
+                player.getWorld().playSound(null, player.getBlockPos(), stopSound, SoundCategory.PLAYERS, 0.5f, 1.0f);
+            }
+        });
+    }
+    
+    private PlayerEntity getPlayerByUuid(UUID uuid) {
+        if (api == null || api.getServer().isEmpty()) return null;
+        return api.getServer().get().getPlayerManager().getPlayer(uuid);
     }
 
     @Nullable
@@ -189,159 +183,99 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         }
         return null;
     }
+    
+    // --- ТВОИ МЕТОДЫ ОБРАБОТКИ ЗВУКА. Я ИСПРАВИЛ ИХ, ЧТОБЫ ОНИ ИСПОЛЬЗОВАЛИ УНИКАЛЬНОЕ СОСТОЯНИЕ ---
 
-    // Применяет полосовой фильтр для имитации узкой полосы частот рации
-    private short[] applyBandpassFilter(short[] input) {
+    private short[] applyBandpassFilter(short[] input, AudioProcessingState state) {
         short[] output = new short[input.length];
-        
-        // Коэффициенты фильтров
         float highpassCutoff = 300.0f / SAMPLE_RATE;
         float lowpassCutoff = 3400.0f / SAMPLE_RATE;
-        
-        float highpassRC = (float)(1.0 / (2.0 * Math.PI * highpassCutoff));
-        float lowpassRC = (float)(1.0 / (2.0 * Math.PI * lowpassCutoff));
-        
-        float highpassAlpha = highpassRC / (highpassRC + 1);
-        float lowpassAlpha = 1 / (lowpassRC + 1);
-        
+        float highpassAlpha = (float) (1.0 / (1.0 + 2.0 * Math.PI * highpassCutoff));
+        float lowpassAlpha = (float) (2.0 * Math.PI * lowpassCutoff);
+
+        short[] highpassed = new short[input.length];
         for (int i = 0; i < input.length; i++) {
-            // Highpass filter (убирает низкие частоты)
             float currentSample = input[i] / 32768.0f;
-            highpassHistory[0] = highpassAlpha * (highpassHistory[0] + currentSample - highpassHistory[1]);
-            highpassHistory[1] = currentSample;
-            
-            // Lowpass filter (убирает высокие частоты)
-            lowpassHistory[0] = lowpassHistory[0] + lowpassAlpha * (highpassHistory[0] - lowpassHistory[0]);
-            
-            output[i] = (short)(lowpassHistory[0] * 32768.0f);
+            state.highpassHistory[0] = highpassAlpha * (state.highpassHistory[0] + currentSample - state.highpassHistory[1]);
+            state.highpassHistory[1] = currentSample;
+            highpassed[i] = (short)(state.highpassHistory[0] * 32768f);
         }
-        
+
+        // Lowpass filter
+        for (int i = 0; i < highpassed.length; i++) {
+            float currentSample = highpassed[i] / 32768.0f;
+            state.lowpassHistory[0] = state.lowpassHistory[0] + lowpassAlpha * (currentSample - state.lowpassHistory[0]);
+            output[i] = (short) (state.lowpassHistory[0] * 32768.0f);
+        }
         return output;
     }
 
-    // Применяет компрессию как в реальных рациях
-    private short[] applyCompression(short[] input) {
+    private short[] applyCompression(short[] input, AudioProcessingState state) {
         short[] output = new short[input.length];
-        
         float threshold = 0.4f;
-        float ratio = 4.0f; // 4:1 компрессия
+        float ratio = 4.0f;
         float attack = 0.001f;
         float release = 0.05f;
         float makeupGain = 2.2f;
-        
-        float envelope = 0.0f;
-        
+
         for (int i = 0; i < input.length; i++) {
             float sample = input[i] / 32768.0f;
             float absSample = Math.abs(sample);
-            
-            // Обновляем огибающую
-            float rate = absSample > envelope ? attack : release;
-            envelope = envelope + rate * (absSample - envelope);
-            
-            // Применяем компрессию
+            float rate = absSample > state.envelope ? attack : release;
+            state.envelope = state.envelope + rate * (absSample - state.envelope);
             float gain = 1.0f;
-            if (envelope > threshold) {
-                float excess = envelope - threshold;
+            if (state.envelope > threshold) {
+                float excess = state.envelope - threshold;
                 float compressedExcess = excess / ratio;
-                gain = (threshold + compressedExcess) / envelope;
+                gain = (threshold + compressedExcess) / state.envelope;
             }
-            
             float compressedSample = sample * gain * makeupGain;
-            
-            // Мягкое ограничение
             compressedSample = (float)Math.tanh(compressedSample * 0.7) * 1.4f;
-            
-            output[i] = (short)(compressedSample * 32768.0f * 0.9f);
+            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, compressedSample * 32768.0f * 0.9f));
         }
-        
         return output;
     }
 
-    // Генерирует реалистичный радио-шум
-    private short[] generateRadioNoise(int length, float intensity) {
+    private short[] generateRadioNoise(int length, float intensity, AudioProcessingState state) {
         short[] noise = new short[length];
-        
-        float pink = 0;
-        float brown = 0;
-        
         for (int i = 0; i < length; i++) {
-            // Белый шум
             float white = (random.nextFloat() * 2f - 1f);
-            
-            // Розовый шум (1/f шум)
-            pink = 0.99f * pink + 0.01f * white;
-            
-            // Коричневый шум (1/f² шум)  
-            brown = 0.998f * brown + 0.002f * white;
-            
-            // Смешиваем разные типы шума
-            float noiseSample = (white * 0.2f + pink * 0.5f + brown * 0.3f);
-            
-            // Добавляем редкие потрескивания
+            state.pink = 0.99f * state.pink + 0.01f * white;
+            state.brown = 0.998f * state.brown + 0.002f * white;
+            float noiseSample = (white * 0.2f + state.pink * 0.5f + state.brown * 0.3f);
             if (random.nextFloat() < 0.00005f) {
                 noiseSample += (random.nextFloat() - 0.5f) * 5.0f;
             }
-            
-            // Добавляем слабые периодические помехи (60Hz hum)
             float hum = (float)Math.sin(2 * Math.PI * 60 * i / SAMPLE_RATE) * 0.03f;
             noiseSample += hum;
-            
-            // Фильтруем шум через lowpass для более реалистичного звука
-            noiseFilterHistory[0] = noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
-            
-            noise[i] = (short)(noiseFilterHistory[0] * intensity * 3000);
+            state.noiseFilterHistory[0] = state.noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
+            noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
         }
-        
         return noise;
     }
 
-    // Добавляет искажения характерные для радио
     private short[] addRadioDistortion(short[] input, float amount) {
         short[] output = new short[input.length];
-        
         for (int i = 0; i < input.length; i++) {
             float sample = input[i] / 32768.0f;
-            
-            // Tube-like saturation
             float drive = 1.0f + amount * 2.0f;
             float distorted = (float)Math.tanh(sample * drive) / drive;
-            
-            // Добавляем немного четных гармоник
             distorted = distorted + (distorted * distorted * 0.05f * amount);
-            
-            // Легкая асимметрия (как в реальных схемах)
             if (distorted > 0) {
                 distorted = distorted * (1.0f + amount * 0.1f);
             }
-            
-            output[i] = (short)(distorted * 32768.0f * 0.95f);
+            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, distorted * 32768.0f * 0.95f));
         }
-        
         return output;
     }
-
-    // Основной метод применения всех радио эффектов
-    private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality) {
-        // Сбрасываем историю фильтров для нового аудио
-        highpassHistory = new float[2];
-        lowpassHistory = new float[2];
-        noiseFilterHistory = new float[2];
-        
-        // 1. Применяем полосовой фильтр
-        short[] filtered = applyBandpassFilter(rawAudio);
-        
-        // 2. Применяем компрессию
-        short[] compressed = applyCompression(filtered);
-        
-        // 3. Добавляем искажения в зависимости от качества сигнала
+    
+    private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
+        short[] filtered = applyBandpassFilter(rawAudio, state);
+        short[] compressed = applyCompression(filtered, state);
         float distortionAmount = (1.0f - signalQuality) * 0.3f;
         short[] distorted = addRadioDistortion(compressed, distortionAmount);
+        short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
         
-        // 4. Генерируем радио-шум
-        short[] noise = generateRadioNoise(distorted.length, 1.0f);
-        
-        // 5. Смешиваем сигнал и шум
         short[] output = new short[distorted.length];
         float signalLevel = 0.6f + signalQuality * 0.4f;
         float noiseLevel = (1.0f - signalQuality) * 0.4f;
@@ -350,11 +284,11 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
             output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
         }
-        
         return output;
     }
 
-    private void onMicPacket(MicrophonePacketEvent event) {
+    @Override
+    public void onMicPacket(MicrophonePacketEvent event) {
         if (api == null || event.getSenderConnection() == null) return;
         if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) return;
 
@@ -362,50 +296,46 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         if (senderItemStack == null || !isWalkieTalkieActivate(senderItemStack) || isWalkieTalkieMute(senderItemStack)) return;
 
         event.cancel();
-
+        
         byte[] opusData = event.getPacket().getOpusEncodedData();
         if (opusData.length == 0) return;
 
         OpusDecoder decoder = api.createDecoder();
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
+        
+        Set<ServerPlayerEntity> validReceivers = new HashSet<>();
+        for (PlayerEntity p : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
+            if (p instanceof ServerPlayerEntity receiverPlayer && !receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
+                 if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) continue;
+                 ItemStack receiverStack = Util.getWalkieTalkieActivated(receiverPlayer);
+                 if (receiverStack == null) continue;
+                 if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) continue;
+                 validReceivers.add(receiverPlayer);
+            }
+        }
+        
+        handleTransmissionStart(senderPlayer, validReceivers);
+        
+        AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
+        if (senderState == null) return; // Проверка на случай, если состояние не успело создаться
 
         int senderCanal = getCanal(senderItemStack);
-        
-        // Собираем всех получателей для обработки звуков начала/конца
-        Set<ServerPlayerEntity> validReceivers = new HashSet<>();
 
-        // Обработка для динамиков - высокое качество сигнала
-        short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f);
+        short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
                 .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
 
-        // Обработка для игроков с рациями
-        for (PlayerEntity receiverPlayerEntity : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
-            if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer) || receiverPlayer.getUuid().equals(senderPlayer.getUuid())) continue;
-            if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) continue;
-            ItemStack receiverStack = Util.getWalkieTalkieActivated(receiverPlayer);
-            if (receiverStack == null) continue;
-            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) continue;
-
-            validReceivers.add(receiverPlayer);
-            
+        for (ServerPlayerEntity receiverPlayer : validReceivers) {
             double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
             float signalQuality;
 
-            // Определяем качество сигнала по расстоянию
-            if (distance <= 100D) { 
-                signalQuality = 0.9f + random.nextFloat() * 0.05f; // 90-95%
-            } else if (distance <= 250D) { 
-                signalQuality = 0.7f + random.nextFloat() * 0.1f; // 70-80%
-            } else if (distance <= 500D) { 
-                signalQuality = 0.45f + random.nextFloat() * 0.1f; // 45-55%
-            } else { 
-                signalQuality = 0.2f + random.nextFloat() * 0.1f; // 20-30%
-            }
+            if (distance <= 100D) { signalQuality = 0.9f + random.nextFloat() * 0.05f; }
+            else if (distance <= 250D) { signalQuality = 0.7f + random.nextFloat() * 0.1f; }
+            else if (distance <= 500D) { signalQuality = 0.45f + random.nextFloat() * 0.1f; }
+            else { signalQuality = 0.2f + random.nextFloat() * 0.1f; }
             
-            // Применяем все радио эффекты с учетом качества сигнала
-            short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality);
+            short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
             
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
             World receiverWorld = receiverPlayer.getWorld();
@@ -417,9 +347,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 player.startPlaying();
             }
         }
-        
-        // Обрабатываем звуки начала передачи
-        handleTransmissionStart(senderPlayer, validReceivers);
     }
 
     private int getCanal(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); }
