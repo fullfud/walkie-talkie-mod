@@ -1,4 +1,4 @@
-name: Manual Build for 1.20.1
+name: Build for 1.20.1
 
 on:
   workflow_dispatch:
@@ -11,38 +11,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # НОВЫЙ ДИАГНОСТИЧЕСКИЙ БЛОК
-      - name: Verify Workspace Contents
-        run: |
-          echo "--- Проверяем текущую директорию ---"
-          pwd
-          echo "--- Проверяем содержимое директории (ls -la) ---"
-          ls -la
-
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
+      
+      # ШАГ 1: ИСПОЛЬЗУЕМ ОФИЦИАЛЬНОЕ ДЕЙСТВИЕ ДЛЯ GRADLE
+      # Это действие автоматически кэширует не только зависимости, но и сам Gradle (wrapper),
+      # а также настраивает кэш сборки (Build Cache).
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          # Включаем кэширование и зависимостей, и метаданных Gradle
+          cache-read-only: false 
+          
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
+      # ШАГ 2: СОБИРАЕМ ПРОЕКТ С ФЛАГАМИ ОПТИМИЗАЦИИ
       - name: Build Release JARs
-        run: ./gradlew remapJar
-
-      - name: List files for debugging
-        run: ls -R .
+        run: ./gradlew remapJar --build-cache --no-daemon
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
