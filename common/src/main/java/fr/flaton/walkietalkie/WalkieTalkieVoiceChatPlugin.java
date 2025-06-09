@@ -130,7 +130,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         int senderCanal = getCanal(senderItemStack);
 
         // --- Обработка для стационарных динамиков (Speakers) ---
-        float speakerNoiseIntensity = 0.008f;
+        float speakerNoiseIntensity = 0.0001f;
         short[] speakerNoisyAudio = addWhiteNoise(rawAudio, speakerNoiseIntensity);
 
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
