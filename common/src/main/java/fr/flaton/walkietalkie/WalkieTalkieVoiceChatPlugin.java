@@ -17,7 +17,7 @@ import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
-import fr.flaton.walkietalkie.sound.ModSounds;
+import fr.flaton.walkietalkie.sound.ModSoundEvents;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
