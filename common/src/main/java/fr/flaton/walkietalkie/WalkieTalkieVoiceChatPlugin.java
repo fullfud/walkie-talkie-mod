@@ -1,9 +1,13 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (ПОЛНАЯ ФИНАЛЬНАЯ ВЕРСИЯ)
+// Файл: WalkieTalkieVoiceChatPlugin.java (ПОЛНАЯ ВЕРСИЯ СО ВСЕМИ ИМПОРТАМИ)
 
 package fr.flaton.walkietalkie;
 
+// --- ПОЛНЫЙ И ПРАВИЛЬНЫЙ СПИСОК ИМПОРТОВ ---
+import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
+import de.maxhenkel.voicechat.api.VoicechatPlugin;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
+import de.maxhenkel.voicechat.api.VolumeCategory;
 import de.maxhenkel.voicechat.api.audiochannel.AudioChannel;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
@@ -25,7 +29,9 @@ import java.net.URL;
 import java.util.Enumeration;
 import java.util.Objects;
 import java.util.Random;
+// -------------------------------------------
 
+@ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     public final static String SPEAKER_CATEGORY = "speakers";
@@ -113,22 +119,18 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
-        // --- ДЕКОДИРОВАНИЕ ---
         OpusDecoder decoder = api.createDecoder();
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
-        // ---------------------
         
-        float noiseIntensity = 0.05f; // Для raw-звука интенсивность нужна намного меньше
+        float noiseIntensity = 0.05f;
         short[] noisyRawAudio = addWhiteNoise(rawAudio, noiseIntensity);
         
         int senderCanal = getCanal(senderItemStack);
         
-        // Отправляем на динамики
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
                 .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, noisyRawAudio, senderPlayer));
 
-        // Отправляем другим игрокам
         for (PlayerEntity receiverPlayerEntity : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
             if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer) || receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
                 continue;
@@ -146,7 +148,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
             VoicechatConnection connection = api.getConnectionOf(receiverPlayer.getUuid());
             if (connection != null) {
-                // Создаем персональный аудиоканал для получателя и проигрываем в нем звук
                 AudioChannel channel = api.createPlayerAudioChannel(connection);
                 if (channel != null) {
                     AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), noisyRawAudio);
