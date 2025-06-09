@@ -1,4 +1,4 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (ПОЛНАЯ ВЕРСИЯ С НОВЫМ АЛГОРИТМОМ ШУМА)
+// Файл: WalkieTalkieVoiceChatPlugin.java (Полный код со ступенчатым шумом)
 
 package fr.flaton.walkietalkie;
 
@@ -84,7 +84,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         return null;
     }
 
-    // НОВЫЙ, ПРАВИЛЬНЫЙ МЕТОД СМЕШИВАНИЯ ШУМА
     private short[] addWhiteNoise(short[] rawAudio, float mixFactor) {
         if (rawAudio.length == 0 || mixFactor <= 0f) {
             return rawAudio;
@@ -127,11 +126,11 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         OpusDecoder decoder = api.createDecoder();
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
-        
+
         int senderCanal = getCanal(senderItemStack);
 
         // --- Обработка для стационарных динамиков (Speakers) ---
-        float speakerNoiseIntensity = 0.005f; 
+        float speakerNoiseIntensity = 0.008f;
         short[] speakerNoisyAudio = addWhiteNoise(rawAudio, speakerNoiseIntensity);
 
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
@@ -142,39 +141,35 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer) || receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
                 continue;
             }
-            if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) {
-                continue;
-            }
+            if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) continue;
             ItemStack receiverStack = Util.getWalkieTalkieActivated(receiverPlayer);
-            if (receiverStack == null) {
-                continue;
-            }
-            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) {
-                continue;
-            }
+            if (receiverStack == null) continue;
+            if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) continue;
+
+            // --- НОВАЯ СТУПЕНЧАТАЯ ЛОГИКА ШУМА ---
             
-            // --- ЛОГИКА РАСЧЕТА ШУМА ОТ РАССТОЯНИЯ ---
             double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
-            
-            float minNoise = 0.002f;
-            float maxNoise = 0.01f;
-            float startScalingDistance = 100f;
-            float maxScalingDistance = 500f;
-            
             float noiseIntensity;
-            
-            if (distance <= startScalingDistance) {
-                noiseIntensity = minNoise;
-            } else if (distance >= maxScalingDistance) {
-                noiseIntensity = maxNoise;
-            } else {
-                float progress = (float) ((distance - startScalingDistance) / (maxScalingDistance - startScalingDistance));
-                noiseIntensity = minNoise + (maxNoise - minNoise) * progress;
+
+            // Уровень 1: Чистый сигнал (до 100 блоков)
+            if (distance <= 100D) {
+                noiseIntensity = 0.002f; // 0.2%
+            } 
+            // Уровень 2: Легкие помехи (100-250 блоков)
+            else if (distance <= 250D) {
+                noiseIntensity = 0.008f; // 0.8%
+            } 
+            // Уровень 3: Сильные помехи (250-500 блоков)
+            else if (distance <= 500D) {
+                noiseIntensity = 0.015f; // 1.5%
+            }
+            // Уровень 4: Предел связи (дальше 500 блоков)
+            else {
+                noiseIntensity = 0.025f; // 2.5%
             }
             
             short[] noisyRawAudioForPlayer = addWhiteNoise(rawAudio, noiseIntensity);
 
-            // --- Отправка звука игроку ---
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
             World receiverWorld = receiverPlayer.getWorld();
             
