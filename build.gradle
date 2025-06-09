@@ -1,37 +1,42 @@
-plugins {
-    // ЗАМЕНЕНА: 3.4-SNAPSHOT -> 3.4.108
-    id "architectury-plugin" version "3.4.108"
-    // ЗАМЕНЕНА: 1.5-SNAPSHOT -> 1.6.14 (современная стабильная версия)
-    id "dev.architectury.loom" version "1.6.14" apply false
+// УБИРАЕМ СТАРЫЙ БЛОК plugins {} И ЗАМЕНЯЕМ ЕГО НА buildscript {}
+// Этот блок выполняется самым первым и говорит Gradle, где искать плагины для сборки.
+buildscript {
+    repositories {
+        maven { url = 'https://maven.architectury.dev/' }
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven.minecraftforge.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+    dependencies {
+        // Указываем стабильные версии плагинов
+        classpath 'dev.architectury:architectury-plugin:3.4.108'
+        classpath 'dev.architectury.loom:dev.architectury.loom.gradle.plugin:1.6.14'
+    }
 }
+
+// ПРИМЕНЯЕМ ПЛАГИН СТАРЫМ СПОСОБОМ
+apply plugin: 'architectury-plugin'
 
 architectury {
     minecraft = rootProject.minecraft_version
 }
 
 subprojects {
+    // Применяем loom здесь, как и было
     apply plugin: "dev.architectury.loom"
-
-    // Добавляем репозиторий Architectury сюда, чтобы Loom мог найти все необходимое
-    repositories {
-        maven {
-            name = "Architectury"
-            url = "https://maven.architectury.dev/"
-        }
-    }
 
     dependencies {
         minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
         mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
 
-        // Версия voicechat_api_version (2.3.3) у тебя уже стабильная, ее не трогаем
-        implementation "de.maxhenkel.voicechat:voicechat-api:${rootProject.voicechat_api_version}"
+        implementation "de.maxhenkel.voicechat:voicechat-api:${root.voicechat_api_version}"
     }
 
     processResources {
         def expandProps = [
                 "version": version,
-                "group": project.group, //Else we target the task's group.
+                "group": project.group,
                 "minecraft_version": minecraft_version,
                 "min_minecraft_version": min_minecraft_version,
                 "forge_version": forge_version,
@@ -67,12 +72,7 @@ allprojects {
     group = rootProject.group
 
     repositories {
-        // Add repositories to retrieve artifacts from in here.
-        // You should only use this when depending on other mods because
-        // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-        // See https://docs.gradle.org/current/userguide/declaring_repositories.html
-        // for more information about repositories.
-
+        // Репозитории для зависимостей мода (не плагинов)
         maven { url = 'https://maven.maxhenkel.de/repository/public' }
 
         exclusiveContent {
@@ -116,5 +116,4 @@ allprojects {
                 ':forge:modrinth'
         ]
     }
-
 }
