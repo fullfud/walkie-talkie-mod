@@ -3,7 +3,6 @@ package fr.flaton.walkietalkie;
 import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
 import de.maxhenkel.voicechat.api.Position;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
-import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import de.maxhenkel.voicechat.api.VolumeCategory;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
@@ -15,7 +14,7 @@ import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
-import fr.flaton.walkietalkie.ModSoundEvents;
+import fr.flaton.walkietalkie.sound.ModSoundEvents;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -35,19 +34,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     public final static String SPEAKER_CATEGORY = "speakers";
     private static final Random random = new Random();
     private static final int SAMPLE_RATE = 48000;
-    
-    // Твоя система отслеживания передач
-    private final Map<UUID, Long> activeTransmissions = new ConcurrentHashMap<>();
-    private final Map<UUID, Set<UUID>> transmissionReceivers = new ConcurrentHashMap<>();
-    private static final long TRANSMISSION_TIMEOUT = 500;
 
-    // Хранилище состояний фильтров для каждого игрока
+    private final Map<UUID, Set<UUID>> activeTransmissions = new ConcurrentHashMap<>();
     private final Map<UUID, AudioProcessingState> transmissionStates = new ConcurrentHashMap<>();
 
     @Nullable
     public static VoicechatServerApi api;
 
-    // Твой класс для хранения состояния
     private static class AudioProcessingState {
         float[] highpassHistory = new float[2];
         float[] lowpassHistory = new float[2];
@@ -77,80 +70,37 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 .setIcon(getIcon("assets/walkietalkie/textures/block/speaker.png"))
                 .build();
         api.registerVolumeCategory(speakers);
-        startTransmissionTimeoutChecker();
     }
 
-    // Твой поток для проверки таймаутов
-    private void startTransmissionTimeoutChecker() {
-        Thread timeoutChecker = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    Thread.sleep(100);
-                    if (api == null) continue;
-                    long currentTime = System.currentTimeMillis();
-
-                    activeTransmissions.entrySet().removeIf(entry -> {
-                        if (currentTime - entry.getValue() > TRANSMISSION_TIMEOUT) {
-                            handleTransmissionEnd(entry.getKey());
-                            return true;
-                        }
-                        return false;
-                    });
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        });
-        timeoutChecker.setDaemon(true);
-        timeoutChecker.start();
-    }
-
-    // Твоя обработка начала передачи
     private void handleTransmissionStart(ServerPlayerEntity sender, Set<ServerPlayerEntity> receivers) {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
             transmissionStates.put(senderId, new AudioProcessingState());
-            
-            sender.getWorld().playSound(null, sender.getX(), sender.getY(), sender.getZ(),
-                    ModSoundEvents.WALKIETALKIE_ON, SoundCategory.PLAYERS, 0.5f, 1.0f);
+            sender.getWorld().playSound(null, sender.getBlockPos(), ModSoundEvents.WALKIETALKIE_ON, SoundCategory.PLAYERS, 0.5f, 1.0f);
             
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                receiver.getWorld().playSound(null, receiver.getX(), receiver.getY(), receiver.getZ(),
-                        ModSoundEvents.WALKIETALKIE_ON, SoundCategory.PLAYERS, 0.5f, 1.0f);
+                receiver.getWorld().playSound(null, receiver.getBlockPos(), ModSoundEvents.WALKIETALKIE_ON, SoundCategory.PLAYERS, 0.5f, 1.0f);
             }
-            transmissionReceivers.put(senderId, receiverIds);
+            activeTransmissions.put(senderId, receiverIds);
         }
-        activeTransmissions.put(senderId, System.currentTimeMillis());
     }
 
-    // Твоя обработка конца передачи
-    private void handleTransmissionEnd(UUID senderId) {
+    private void handleTransmissionEnd(ServerPlayerEntity sender) {
+        UUID senderId = sender.getUuid();
+        Set<UUID> receiverIds = activeTransmissions.remove(senderId);
         transmissionStates.remove(senderId);
-        Set<UUID> receiverIds = transmissionReceivers.remove(senderId);
 
-        if (receiverIds != null && api != null) {
-            for (UUID playerId : receiverIds) {
-                PlayerEntity player = getPlayerByUuid(playerId);
+        if (receiverIds != null) {
+            sender.getWorld().playSound(null, sender.getBlockPos(), ModSoundEvents.WALKIETALKIE_OFF, SoundCategory.PLAYERS, 0.5f, 1.0f);
+            receiverIds.forEach(uuid -> {
+                PlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
                 if (player != null) {
-                    player.getWorld().playSound(null, player.getX(), player.getY(), player.getZ(),
-                            ModSoundEvents.WALKIETALKIE_OFF, SoundCategory.PLAYERS, 0.5f, 1.0f);
+                    player.getWorld().playSound(null, player.getBlockPos(), ModSoundEvents.WALKIETALKIE_OFF, SoundCategory.PLAYERS, 0.5f, 1.0f);
                 }
-            }
-            PlayerEntity sender = getPlayerByUuid(senderId);
-            if (sender != null) {
-                sender.getWorld().playSound(null, sender.getX(), sender.getY(), sender.getZ(),
-                        ModSoundEvents.WALKIETALKIE_OFF, SoundCategory.PLAYERS, 0.5f, 1.0f);
-            }
+            });
         }
-    }
-
-    // Твой вспомогательный метод (ИСПРАВЛЕННЫЙ)
-    private PlayerEntity getPlayerByUuid(UUID uuid) {
-        if (api == null || api.getServer().isEmpty()) return null;
-        return api.getServer().get().getPlayerManager().getPlayer(uuid);
     }
 
     @Nullable
@@ -276,24 +226,22 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) return;
 
         ItemStack senderItemStack = Util.getWalkieTalkieInHand(senderPlayer);
-        if (senderItemStack == null || !isWalkieTalkieActivate(senderItemStack)) {
-            if (activeTransmissions.containsKey(senderPlayer.getUuid())) {
-                handleTransmissionEnd(senderPlayer.getUuid()); // ИСПРАВЛЕНИЕ
-            }
-            return;
-        }
-        if (isWalkieTalkieMute(senderItemStack)) {
-            if (activeTransmissions.containsKey(senderPlayer.getUuid())) {
-                handleTransmissionEnd(senderPlayer.getUuid()); // ИСПРАВЛЕНИЕ
+        boolean isTransmitting = senderItemStack != null && isWalkieTalkieActivate(senderItemStack) && !isWalkieTalkieMute(senderItemStack);
+        boolean wasTransmitting = activeTransmissions.containsKey(senderPlayer.getUuid());
+
+        if (!isTransmitting) {
+            if (wasTransmitting) {
+                handleTransmissionEnd(senderPlayer);
             }
             return;
         }
         
         byte[] opusData = event.getPacket().getOpusEncodedData();
         if (opusData.length == 0) {
-            // Пакет тишины больше не нужен для таймаута, но мы все еще можем его использовать как триггер
-            if (activeTransmissions.containsKey(senderPlayer.getUuid())) {
-                handleTransmissionEnd(senderPlayer.getUuid()); // ИСПРАВЛЕНИЕ
+            // Пакет тишины. Раньше мы бы здесь завершали передачу, но теперь у нас есть таймаут,
+            // поэтому мы просто обновляем время, чтобы передача не прервалась, пока кнопка зажата.
+            if(wasTransmitting) {
+                 activeTransmissions.put(senderPlayer.getUuid(), System.currentTimeMillis());
             }
             return;
         }
@@ -320,10 +268,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         handleTransmissionStart(senderPlayer, validReceivers);
         
         AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
-        if (senderState == null) {
-            senderState = new AudioProcessingState();
-            transmissionStates.put(senderPlayer.getUuid(), senderState);
-        }
+        if (senderState == null) return;
 
         short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
