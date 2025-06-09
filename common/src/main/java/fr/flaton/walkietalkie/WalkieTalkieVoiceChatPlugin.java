@@ -1,4 +1,4 @@
-// Файл: WalkieTalkieVoiceChatPlugin.java (с симуляцией радио-эффекта)
+// Файл: WalkieTalkieVoiceChatPlugin.java (АБСОЛЮТНО ПОЛНАЯ ВЕРСИЯ)
 
 package fr.flaton.walkietalkie;
 
@@ -40,29 +40,55 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     @Nullable
     public static VoicechatServerApi api;
 
-    // --- Методы до обработки звука остаются без изменений ---
-    @Override public String getPluginId() { return Constants.MOD_ID; }
-    @Override public void registerEvents(EventRegistration registration) { /* ... */ }
-    private void onServerStarted(VoicechatServerStartedEvent event) { /* ... */ }
-    @Nullable private int[][] getIcon(String path) { /* ... */ return null; }
+    @Override
+    public String getPluginId() {
+        return Constants.MOD_ID;
+    }
 
-    // --- НОВЫЕ МЕТОДЫ ОБРАБОТКИ ЗВУКА ---
+    @Override
+    public void registerEvents(EventRegistration registration) {
+        registration.registerEvent(MicrophonePacketEvent.class, this::onMicPacket);
+        registration.registerEvent(VoicechatServerStartedEvent.class, this::onServerStarted);
+    }
 
-    /**
-     * Применяет к звуку эффект "дешевого динамика рации".
-     * Он делает звук более плоским и добавляет легкие искажения.
-     * @param rawAudio Исходный сырой звук
-     * @return Обработанный звук
-     */
+    private void onServerStarted(VoicechatServerStartedEvent event) {
+        api = event.getVoicechat();
+        VolumeCategory speakers = api.volumeCategoryBuilder()
+                .setId(SPEAKER_CATEGORY)
+                .setName("Speakers")
+                .setDescription("The volume of all speakers")
+                .setIcon(getIcon("assets/walkietalkie/textures/block/speaker.png"))
+                .build();
+        api.registerVolumeCategory(speakers);
+    }
+
+    @Nullable
+    private int[][] getIcon(String path) {
+        try {
+            Enumeration<URL> resources = WalkieTalkieVoiceChatPlugin.class.getClassLoader().getResources(path);
+            while (resources.hasMoreElements()) {
+                BufferedImage bufferedImage = ImageIO.read(resources.nextElement().openStream());
+                if (bufferedImage.getWidth() != 16) { continue; }
+                if (bufferedImage.getHeight() != 16) { continue; }
+                int[][] image = new int[16][16];
+                for (int x = 0; x < bufferedImage.getWidth(); x++) {
+                    for (int y = 0; y < bufferedImage.getHeight(); y++) {
+                        image[x][y] = bufferedImage.getRGB(x, y);
+                    }
+                }
+                return image;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     private short[] applyRadioEffect(short[] rawAudio) {
-        // --- Поиграйся с этими значениями для настройки "жестяного" звука ---
-        final float VOLUME_MULTIPLIER = 0.8f; // Уменьшаем общую громкость голоса
-        final short CLIPPING_THRESHOLD = 20000; // Порог, выше которого звук "хрипит"
-        // ----------------------------------------------------------------
-
+        final float VOLUME_MULTIPLIER = 0.8f;
+        final short CLIPPING_THRESHOLD = 20000;
         short[] filteredAudio = new short[rawAudio.length];
         for (int i = 0; i < rawAudio.length; i++) {
-            // Уменьшаем громкость и применяем клиппинг (искажение)
             int sample = (int) (rawAudio[i] * VOLUME_MULTIPLIER);
             sample = Math.max(-CLIPPING_THRESHOLD, Math.min(CLIPPING_THRESHOLD, sample));
             filteredAudio[i] = (short) sample;
@@ -70,24 +96,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         return filteredAudio;
     }
 
-    /**
-     * Смешивает обработанный голос с белым шумом.
-     * @param voiceAudio Голос, уже обработанный радио-фильтром
-     * @param mixFactor Насколько сильно подмешивать шум (0.0 - нет шума, 1.0 - только шум)
-     * @return Финальный звук
-     */
     private short[] addWhiteNoise(short[] voiceAudio, float mixFactor) {
         if (voiceAudio.length == 0 || mixFactor <= 0f) {
             return voiceAudio;
         }
-        
-        // --- Поиграйся с этим значением для настройки громкости самого ШУМА ---
-        final float NOISE_AMPLITUDE = 6000f; // Максимальная громкость белого шума
-        // ---------------------------------------------------------------------
-
+        final float NOISE_AMPLITUDE = 6000f;
         float clampedMix = Math.max(0f, Math.min(1f, mixFactor));
         short[] outputAudio = new short[voiceAudio.length];
-
         for (int i = 0; i < voiceAudio.length; i++) {
             float voiceSample = voiceAudio[i];
             float noiseSample = (random.nextFloat() * 2f - 1f) * NOISE_AMPLITUDE;
@@ -113,37 +128,30 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
 
-        // --- НОВЫЙ ПОРЯДОК ОБРАБОТКИ ---
-        // 1. Сначала применяем к голосу эффект рации
         short[] filteredAudio = applyRadioEffect(rawAudio);
         
         int senderCanal = getCanal(senderItemStack);
 
-        // 2. Обрабатываем звук для динамиков
-        float speakerNoiseIntensity = 0.08f; // 8% шума
+        float speakerNoiseIntensity = 0.08f;
         short[] speakerFinalAudio = addWhiteNoise(filteredAudio, speakerNoiseIntensity);
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
                 .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
 
-        // 3. Обрабатываем звук для каждого игрока индивидуально
         for (PlayerEntity receiverPlayerEntity : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
             if (!(receiverPlayerEntity instanceof ServerPlayerEntity receiverPlayer) || receiverPlayer.getUuid().equals(senderPlayer.getUuid())) continue;
-            // ... (все твои проверки)
             if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) continue;
             ItemStack receiverStack = Util.getWalkieTalkieActivated(receiverPlayer);
             if (receiverStack == null) continue;
             if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) continue;
 
             double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
-            float noiseIntensity; // Это теперь фактор СМЕШИВАНИЯ
+            float noiseIntensity;
 
-            // Ступенчатая логика остается, но теперь она управляет процентом смешивания
-            if (distance <= 100D) { noiseIntensity = 0.05f; } // 5% шума
-            else if (distance <= 250D) { noiseIntensity = 0.12f; } // 12% шума
-            else if (distance <= 500D) { noiseIntensity = 0.20f; } // 20% шума
-            else { noiseIntensity = 0.30f; } // 30% шума
+            if (distance <= 100D) { noiseIntensity = 0.05f; }
+            else if (distance <= 250D) { noiseIntensity = 0.12f; }
+            else if (distance <= 500D) { noiseIntensity = 0.20f; }
+            else { noiseIntensity = 0.30f; }
             
-            // Генерируем финальный звук для этого игрока
             short[] playerFinalAudio = addWhiteNoise(filteredAudio, noiseIntensity);
             
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
@@ -158,7 +166,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         }
     }
 
-    // --- Остальные утилитные методы без изменений ---
     private int getCanal(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); }
     private int getRange(ItemStack stack) { WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem()); return item.getRange(); }
     private boolean isWalkieTalkieActivate(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); }
