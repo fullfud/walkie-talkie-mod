@@ -77,12 +77,12 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
             transmissionStates.put(senderId, new AudioProcessingState());
-            sender.getWorld().playSound(null, sender.getBlockPos(), ModSoundEvents.WALKIETALKIE_ON, SoundCategory.PLAYERS, 0.5f, 1.0f);
+            sender.getWorld().playSound(null, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT, SoundCategory.PLAYERS, 0.5f, 1.0f);
             
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                receiver.getWorld().playSound(null, receiver.getBlockPos(), ModSoundEvents.WALKIETALKIE_ON, SoundCategory.PLAYERS, 0.5f, 1.0f);
+                receiver.getWorld().playSound(null, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT, SoundCategory.PLAYERS, 0.5f, 1.0f);
             }
             activeTransmissions.put(senderId, receiverIds);
         }
@@ -94,11 +94,11 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         transmissionStates.remove(senderId);
 
         if (receiverIds != null) {
-            sender.getWorld().playSound(null, sender.getBlockPos(), ModSoundEvents.WALKIETALKIE_OFF, SoundCategory.PLAYERS, 0.5f, 1.0f);
+            sender.getWorld().playSound(null, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT, SoundCategory.PLAYERS, 0.5f, 1.0f);
             receiverIds.forEach(uuid -> {
                 PlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
                 if (player != null) {
-                    player.getWorld().playSound(null, player.getBlockPos(), ModSoundEvents.WALKIETALKIE_OFF, SoundCategory.PLAYERS, 0.5f, 1.0f);
+                    player.getWorld().playSound(null, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT, SoundCategory.PLAYERS, 0.5f, 1.0f);
                 }
             });
         }
