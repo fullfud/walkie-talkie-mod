@@ -119,7 +119,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
 
-        float noiseIntensity = 0.05f;
+        float noiseIntensity = 0.01f; // Легкое шипение
         short[] noisyRawAudio = addWhiteNoise(rawAudio, noiseIntensity);
 
         int senderCanal = getCanal(senderItemStack);
