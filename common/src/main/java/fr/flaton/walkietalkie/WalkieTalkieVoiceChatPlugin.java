@@ -22,9 +22,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.world.World;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
 import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
@@ -45,8 +42,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     @Nullable
     public static VoicechatServerApi api;
-    @Nullable
-    private MinecraftServer server;
 
     @Override
     public String getPluginId() {
@@ -61,7 +56,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     private void onServerStarted(VoicechatServerStartedEvent event) {
         api = event.getVoicechat();
-        this.server = event.getServer();
 
         VolumeCategory speakers = api.volumeCategoryBuilder()
                 .setId(SPEAKER_CATEGORY)
@@ -70,9 +64,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 .setIcon(getIcon("assets/walkietalkie/textures/block/speaker.png"))
                 .build();
         api.registerVolumeCategory(speakers);
-
-        // Регистрируем класс для прослушивания событий Forge (включая тики)
-        MinecraftForge.EVENT_BUS.register(this);
     }
 
     private void handleTransmissionStart(ServerPlayerEntity sender, Set<ServerPlayerEntity> receivers) {
@@ -95,7 +86,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         Set<UUID> receiverIds = activeTransmissions.remove(senderId);
         transmissionStates.remove(senderId);
 
-        if (receiverIds != null) {
+        if (receiverIds != null && sender.getServer() != null) {
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
             receiverIds.forEach(uuid -> {
                 ServerPlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
@@ -106,9 +97,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         }
     }
 
-    @SubscribeEvent
-    public void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || api == null || activeTransmissions.isEmpty() || server == null) {
+    public void onServerTick(MinecraftServer server) {
+        if (api == null || activeTransmissions.isEmpty()) {
             return;
         }
 
@@ -140,7 +130,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             }
         }
     }
-    
+
     public void onMicPacket(MicrophonePacketEvent event) {
         if (api == null || event.getSenderConnection() == null) return;
         if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) return;
@@ -169,7 +159,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             short[] rawAudio = decoder.decode(opusData);
             decoder.close();
 
-            // Используем улучшенный эффект для голоса
             short[] finalAudio = applyFullRadioEffect(rawAudio, 0.9f, senderState);
 
             OpusEncoder encoder = api.createEncoder();
@@ -186,8 +175,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                     .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, finalAudio, senderPlayer));
         }
     }
-
-    // --- ВСПОМОГАТЕЛЬНЫЕ И АУДИО МЕТОДЫ ---
 
     private Set<ServerPlayerEntity> findValidReceivers(ServerPlayerEntity sender) {
         ItemStack senderStack = Util.getWalkieTalkieInHand(sender);
@@ -209,33 +196,24 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         return validReceivers;
     }
 
-    /**
-     * УЛУЧШЕННАЯ ВЕРСИЯ: Убран резкий дисторшн, изменен баланс голоса и шума для более реалистичного эффекта.
-     */
     private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
         short[] filtered = applyBandpassFilter(rawAudio, state);
         short[] compressed = applyCompression(filtered, state);
         
-        // 1. Дисторшн полностью убран для чистого, но "радийного" звука.
         short[] distorted = compressed; 
 
-        // 2. Генерируем шум, как и раньше.
         short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
         short[] output = new short[distorted.length];
         
-        // 3. Изменен баланс: голос затухает, а шум нарастает при плохом сигнале.
         float signalLevel = 0.2f + signalQuality * 0.8f; 
         float noiseLevel = (1.0f - signalQuality) * 0.8f; 
         
         for (int i = 0; i < output.length; i++) {
-            // Смешиваем чистый (но обработанный) голос с шумом
             float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
             output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
         }
         return output;
     }
-    
-    // ... остальные аудио-методы (applyBandpassFilter, и т.д.) без изменений ...
     
     private short[] applyBandpassFilter(short[] input, AudioProcessingState state) {
         short[] output = new short[input.length];
@@ -298,23 +276,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
         }
         return noise;
-    }
-
-    private short[] addRadioDistortion(short[] input, float amount) {
-        // Этот метод больше не используется в applyFullRadioEffect, но мы его оставляем,
-        // вдруг вы захотите вернуть немного дисторшна в будущем.
-        short[] output = new short[input.length];
-        for (int i = 0; i < input.length; i++) {
-            float sample = input[i] / 32768.0f;
-            float drive = 1.0f + amount * 2.0f;
-            float distorted = (float)Math.tanh(sample * drive) / drive;
-            distorted = distorted + (distorted * distorted * 0.05f * amount);
-            if (distorted > 0) {
-                distorted = distorted * (1.0f + amount * 0.1f);
-            }
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, distorted * 32768.0f * 0.95f));
-        }
-        return output;
     }
 
     @Nullable
