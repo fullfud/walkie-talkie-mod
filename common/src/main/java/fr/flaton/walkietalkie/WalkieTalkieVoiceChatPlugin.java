@@ -41,8 +41,11 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     private static final Random random = new Random();
     private static final int SAMPLE_RATE = 48000;
 
+    // Для постоянного шума (следит за кнопкой питания)
     private final Map<UUID, Boolean> walkiePowerState = new ConcurrentHashMap<>();
+    // Для PTT звуков (следит за фактом разговора)
     private final Map<UUID, Boolean> playerSpeakingState = new ConcurrentHashMap<>();
+    // Для хранения состояния аудио-фильтров для каждого игрока
     private final Map<UUID, AudioProcessingState> playerAudioStates = new ConcurrentHashMap<>();
 
     @Nullable
@@ -71,7 +74,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     }
 
     public void onServerTick(MinecraftServer server) {
-        if (api == null || walkiePowerState.isEmpty()) {
+        // Проверяем, включен ли пассивный шум в конфиге
+        if (!ModConfig.enablePassiveNoise || api == null || walkiePowerState.isEmpty()) {
             return;
         }
 
@@ -82,18 +86,18 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         for (UUID playerId : walkiePowerState.keySet()) {
             // Проверяем, включена ли рация И молчит ли игрок
             if (walkiePowerState.getOrDefault(playerId, false) && !playerSpeakingState.getOrDefault(playerId, false)) {
-                
+
                 ServerPlayerEntity sender = server.getPlayerManager().getPlayer(playerId);
                 if (sender == null) continue;
 
                 ItemStack senderStack = Util.getWalkieTalkieInHand(sender);
-                // Дополнительно проверяем, что рация все еще активна и не в муте
                 if (senderStack == null || !isWalkieTalkieActivate(senderStack) || isWalkieTalkieMute(senderStack)) {
                     continue;
                 }
 
                 AudioProcessingState senderState = playerAudioStates.computeIfAbsent(playerId, id -> new AudioProcessingState());
-                short[] noiseSample = generateRadioNoise(960, 0.15f, senderState);
+                // Используем громкость шума из конфига
+                short[] noiseSample = generateRadioNoise(960, ModConfig.passiveNoiseVolume, senderState);
 
                 // Отправляем шум игрокам
                 Set<ServerPlayerEntity> receivers = findValidReceivers(sender);
@@ -142,11 +146,17 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         if (isCurrentlySpeaking && !wasSpeaking) {
             playerSpeakingState.put(playerId, true);
             playerAudioStates.computeIfAbsent(playerId, id -> new AudioProcessingState());
-            senderPlayer.getWorld().playSound(null, senderPlayer.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 1.0f);
+            // Проверяем, включены ли PTT звуки в конфиге
+            if (ModConfig.enablePttSounds) {
+                senderPlayer.getWorld().playSound(null, senderPlayer.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 1.0f);
+            }
         } else if (!isCurrentlySpeaking && wasSpeaking) {
             playerSpeakingState.put(playerId, false);
             playerAudioStates.remove(playerId);
-            senderPlayer.getWorld().playSound(null, senderPlayer.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 1.0f);
+            // Проверяем, включены ли PTT звуки в конфиге
+            if (ModConfig.enablePttSounds) {
+                senderPlayer.getWorld().playSound(null, senderPlayer.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 1.0f);
+            }
         }
 
         if (isCurrentlySpeaking) {
@@ -175,7 +185,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             if (distance > 100D) signalQuality = 0.9f;
             if (distance > 250D) signalQuality = 0.7f;
             if (distance > 500D) signalQuality = 0.45f;
-            
+
             short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
             LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverPlayer.getWorld()), receiverPosition);
@@ -211,28 +221,24 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
         short[] filtered = applyBandpassFilter(rawAudio, state);
         short[] compressed = applyCompression(filtered, state);
-        
-        short[] distorted = compressed; 
-
+        short[] distorted = compressed;
         short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
         short[] output = new short[distorted.length];
-        
-        float signalLevel = 0.2f + signalQuality * 0.8f; 
-        float noiseLevel = (1.0f - signalQuality) * 0.8f; 
-        
+        float signalLevel = 0.2f + signalQuality * 0.8f;
+        float noiseLevel = (1.0f - signalQuality) * 0.8f;
         for (int i = 0; i < output.length; i++) {
             float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
+            output[i] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
         }
         return output;
     }
-    
+
     private short[] applyBandpassFilter(short[] input, AudioProcessingState state) {
         short[] output = new short[input.length];
         float highpassCutoff = 300.0f / SAMPLE_RATE;
         float lowpassCutoff = 3400.0f / SAMPLE_RATE;
-        float highpassRC = (float)(1.0 / (2.0 * Math.PI * highpassCutoff));
-        float lowpassRC = (float)(1.0 / (2.0 * Math.PI * lowpassCutoff));
+        float highpassRC = (float) (1.0 / (2.0 * Math.PI * highpassCutoff));
+        float lowpassRC = (float) (1.0 / (2.0 * Math.PI * lowpassCutoff));
         float highpassAlpha = highpassRC / (highpassRC + 1);
         float lowpassAlpha = lowpassRC / (lowpassRC + 1);
 
@@ -241,7 +247,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             state.highpassHistory[0] = highpassAlpha * (state.highpassHistory[0] + currentSample - state.highpassHistory[1]);
             state.highpassHistory[1] = currentSample;
             state.lowpassHistory[0] = state.lowpassHistory[0] + lowpassAlpha * (state.highpassHistory[0] - state.lowpassHistory[0]);
-            output[i] = (short)(state.lowpassHistory[0] * 32768.0f);
+            output[i] = (short) (state.lowpassHistory[0] * 32768.0f);
         }
         return output;
     }
@@ -266,8 +272,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 gain = (threshold + compressedExcess) / state.envelope;
             }
             float compressedSample = sample * gain * makeupGain;
-            compressedSample = (float)Math.tanh(compressedSample * 0.7) * 1.4f;
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, compressedSample * 32768.0f * 0.9f));
+            compressedSample = (float) Math.tanh(compressedSample * 0.7) * 1.4f;
+            output[i] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, compressedSample * 32768.0f * 0.9f));
         }
         return output;
     }
@@ -282,10 +288,10 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             if (random.nextFloat() < 0.00005f) {
                 noiseSample += (random.nextFloat() - 0.5f) * 5.0f;
             }
-            float hum = (float)Math.sin(2 * Math.PI * 60 * i / SAMPLE_RATE) * 0.03f;
+            float hum = (float) Math.sin(2 * Math.PI * 60 * i / SAMPLE_RATE) * 0.03f;
             noiseSample += hum;
             state.noiseFilterHistory[0] = state.noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
-            noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
+            noise[i] = (short) (state.noiseFilterHistory[0] * intensity * 3000);
         }
         return noise;
     }
