@@ -31,24 +31,38 @@ import java.util.concurrent.ConcurrentHashMap;
 @ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
+    // =================================================================================
+    // --- ПАНЕЛЬ УПРАВЛЕНИЯ ЗВУКОМ ---
+    // =================================================================================
+    private static final float RADIO_LOW_PASS_CUTOFF = 3000.0f;
+    private static final float RADIO_HIGH_PASS_CUTOFF = 400.0f;
+    private static final float DISTORTION_GAIN = 3.0f;
+    private static final float DISTORTION_CLIP_THRESHOLD = 0.7f;
+    private static final float RADIO_NOISE_VOLUME = 0.3f;
+    private static final float CRACKLE_CHANCE_MULTIPLIER = 0.008f;
+    private static final float CRACKLE_VOLUME = 18000f;
+    private static final boolean FAN_HUM_ENABLED = true;
+    private static final float FAN_HUM_VOLUME = 0.04f;
+    private static final float FAN_HUM_BASE_FREQUENCY = 120.0f;
+    private static final float FAN_HUM_HARMONIC_FREQUENCY = 180.0f;
+    // =================================================================================
+    
     public final static String SPEAKER_CATEGORY = "speakers";
     private static final Random random = new Random();
     private static final int SAMPLE_RATE = 48000;
 
-    // Упрощенная система: храним только кто кому передает, чтобы проиграть звук конца
-    private final Map<UUID, Set<UUID>> activeTransmissions = new ConcurrentHashMap<>();
     private final Map<UUID, AudioProcessingState> transmissionStates = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<UUID>> activeTransmissions = new ConcurrentHashMap<>();
 
     @Nullable
     public static VoicechatServerApi api;
 
     private static class AudioProcessingState {
-        float[] highpassHistory = new float[2];
-        float[] lowpassHistory = new float[2];
-        float[] noiseFilterHistory = new float[2];
-        float envelope = 0.0f;
-        float pink = 0;
-        float brown = 0;
+        float lp_hist = 0.0f;
+        float hp_hist_in = 0.0f;
+        float hp_hist_out = 0.0f;
+        double fanHumPhase1 = 0.0;
+        double fanHumPhase2 = 0.0;
     }
 
     @Override
@@ -104,122 +118,49 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         }
     }
 
-    @Nullable
-    private int[][] getIcon(String path) {
-        try {
-            Enumeration<URL> resources = WalkieTalkieVoiceChatPlugin.class.getClassLoader().getResources(path);
-            while (resources.hasMoreElements()) {
-                BufferedImage bufferedImage = ImageIO.read(resources.nextElement().openStream());
-                if (bufferedImage.getWidth() != 16) { continue; }
-                if (bufferedImage.getHeight() != 16) { continue; }
-                int[][] image = new int[16][16];
-                for (int x = 0; x < bufferedImage.getWidth(); x++) {
-                    for (int y = 0; y < bufferedImage.getHeight(); y++) {
-                        image[x][y] = bufferedImage.getRGB(x, y);
-                    }
-                }
-                return image;
+    private short[] processRadioAudio(short[] rawAudio, float signalQuality, AudioProcessingState state) {
+        short[] processedAudio = new short[rawAudio.length];
+        float lowPassAlpha = (float) (2.0 * Math.PI * RADIO_LOW_PASS_CUTOFF / SAMPLE_RATE);
+        float highPassAlpha = RADIO_HIGH_PASS_CUTOFF / (RADIO_HIGH_PASS_CUTOFF + SAMPLE_RATE);
+        float distortionAmount = (1f - signalQuality) * 0.7f;
+        float radioNoiseMix = (1f - signalQuality) * 0.7f;
+        float crackleChance = (1f - signalQuality) * CRACKLE_CHANCE_MULTIPLIER;
+        double fanPhaseStep1 = 2.0 * Math.PI * FAN_HUM_BASE_FREQUENCY / SAMPLE_RATE;
+        double fanPhaseStep2 = 2.0 * Math.PI * FAN_HUM_HARMONIC_FREQUENCY / SAMPLE_RATE;
+
+        for (int i = 0; i < rawAudio.length; i++) {
+            float sample = rawAudio[i] / 32768.0f;
+
+            // Фильтр
+            state.hp_hist_out = (state.hp_hist_out + sample - state.hp_hist_in) * highPassAlpha;
+            state.hp_hist_in = sample;
+            state.lp_hist += (state.hp_hist_out - state.lp_hist) * lowPassAlpha;
+            float filteredSample = state.lp_hist;
+            
+            // Искажения
+            float distortedSample = filteredSample * (DISTORTION_GAIN + distortionAmount);
+            distortedSample = Math.max(-DISTORTION_CLIP_THRESHOLD, Math.min(DISTORTION_CLIP_THRESHOLD, distortedSample));
+
+            // Шумы
+            float radioNoiseSample = (random.nextFloat() * 2f - 1f) * RADIO_NOISE_VOLUME;
+            if (random.nextFloat() < crackleChance) {
+                radioNoiseSample += (random.nextFloat() * 2f - 1f) * CRACKLE_VOLUME / 32768f;
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-    
-    // --- Твои методы обработки звука ---
-    private short[] applyBandpassFilter(short[] input, AudioProcessingState state) {
-        short[] output = new short[input.length];
-        float highpassCutoff = 300.0f / SAMPLE_RATE;
-        float lowpassCutoff = 3400.0f / SAMPLE_RATE;
-        float highpassRC = (float)(1.0 / (2.0 * Math.PI * highpassCutoff));
-        float lowpassRC = (float)(1.0 / (2.0 * Math.PI * lowpassCutoff));
-        float highpassAlpha = highpassRC / (highpassRC + 1);
-        float lowpassAlpha = lowpassRC / (lowpassRC + 1);
-
-        for (int i = 0; i < input.length; i++) {
-            float currentSample = input[i] / 32768.0f;
-            state.highpassHistory[0] = highpassAlpha * (state.highpassHistory[0] + currentSample - state.highpassHistory[1]);
-            state.highpassHistory[1] = currentSample;
-            state.lowpassHistory[0] = state.lowpassHistory[0] + lowpassAlpha * (state.highpassHistory[0] - state.lowpassHistory[0]);
-            output[i] = (short)(state.lowpassHistory[0] * 32768.0f);
-        }
-        return output;
-    }
-
-    private short[] applyCompression(short[] input, AudioProcessingState state) {
-        short[] output = new short[input.length];
-        float threshold = 0.4f;
-        float ratio = 4.0f;
-        float attack = 0.001f;
-        float release = 0.05f;
-        float makeupGain = 2.2f;
-
-        for (int i = 0; i < input.length; i++) {
-            float sample = input[i] / 32768.0f;
-            float absSample = Math.abs(sample);
-            float rate = absSample > state.envelope ? attack : release;
-            state.envelope = state.envelope + rate * (absSample - state.envelope);
-            float gain = 1.0f;
-            if (state.envelope > threshold) {
-                float excess = state.envelope - threshold;
-                float compressedExcess = excess / ratio;
-                gain = (threshold + compressedExcess) / state.envelope;
+            float fanHumSample = 0f;
+            if (FAN_HUM_ENABLED) {
+                fanHumSample += (float) Math.sin(state.fanHumPhase1) * FAN_HUM_VOLUME;
+                fanHumSample += (float) Math.sin(state.fanHumPhase2) * FAN_HUM_VOLUME * 0.5f;
+                state.fanHumPhase1 += fanPhaseStep1;
+                state.fanHumPhase2 += fanPhaseStep2;
             }
-            float compressedSample = sample * gain * makeupGain;
-            compressedSample = (float)Math.tanh(compressedSample * 0.7) * 1.4f;
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, compressedSample * 32768.0f * 0.9f));
-        }
-        return output;
-    }
 
-    private short[] generateRadioNoise(int length, float intensity, AudioProcessingState state) {
-        short[] noise = new short[length];
-        for (int i = 0; i < length; i++) {
-            float white = (random.nextFloat() * 2f - 1f);
-            state.pink = 0.99f * state.pink + 0.01f * white;
-            state.brown = 0.998f * state.brown + 0.002f * white;
-            float noiseSample = (white * 0.2f + state.pink * 0.5f + state.brown * 0.3f);
-            if (random.nextFloat() < 0.00005f) {
-                noiseSample += (random.nextFloat() - 0.5f) * 5.0f;
-            }
-            float hum = (float)Math.sin(2 * Math.PI * 60 * i / SAMPLE_RATE) * 0.03f;
-            noiseSample += hum;
-            state.noiseFilterHistory[0] = state.noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
-            noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
+            // Финальный микс
+            float finalSample = (distortedSample * (1f - radioNoiseMix)) + (radioNoiseSample * radioNoiseMix);
+            finalSample += fanHumSample;
+            
+            processedAudio[i] = (short) (Math.max(-1.0, Math.min(1.0, finalSample)) * 32768.0f);
         }
-        return noise;
-    }
-
-    private short[] addRadioDistortion(short[] input, float amount) {
-        short[] output = new short[input.length];
-        for (int i = 0; i < input.length; i++) {
-            float sample = input[i] / 32768.0f;
-            float drive = 1.0f + amount * 2.0f;
-            float distorted = (float)Math.tanh(sample * drive) / drive;
-            distorted = distorted + (distorted * distorted * 0.05f * amount);
-            if (distorted > 0) {
-                distorted = distorted * (1.0f + amount * 0.1f);
-            }
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, distorted * 32768.0f * 0.95f));
-        }
-        return output;
-    }
-    
-    private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
-        short[] filtered = applyBandpassFilter(rawAudio, state);
-        short[] compressed = applyCompression(filtered, state);
-        float distortionAmount = (1.0f - signalQuality) * 0.3f;
-        short[] distorted = addRadioDistortion(compressed, distortionAmount);
-        short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
-        short[] output = new short[distorted.length];
-        float signalLevel = 0.6f + signalQuality * 0.4f;
-        float noiseLevel = (1.0f - signalQuality) * 0.4f;
-        
-        for (int i = 0; i < output.length; i++) {
-            float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
-        }
-        return output;
+        return processedAudio;
     }
     
     public void onMicPacket(MicrophonePacketEvent event) {
@@ -231,17 +172,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         boolean wasTransmitting = activeTransmissions.containsKey(senderPlayer.getUuid());
 
         if (!isTransmitting) {
-            if (wasTransmitting) {
-                handleTransmissionEnd(senderPlayer);
-            }
+            if (wasTransmitting) handleTransmissionEnd(senderPlayer);
             return;
         }
         
         byte[] opusData = event.getPacket().getOpusEncodedData();
         if (opusData.length == 0) {
-            if (wasTransmitting) {
-                handleTransmissionEnd(senderPlayer);
-            }
+            if (wasTransmitting) handleTransmissionEnd(senderPlayer);
             return;
         }
 
@@ -267,12 +204,9 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         handleTransmissionStart(senderPlayer, validReceivers);
         
         AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
-        if (senderState == null) {
-             senderState = new AudioProcessingState();
-             transmissionStates.put(senderPlayer.getUuid(), senderState);
-        }
+        if (senderState == null) return;
 
-        short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
+        short[] speakerFinalAudio = processRadioAudio(rawAudio, 0.95f, senderState);
         SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
                 .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
 
@@ -280,12 +214,12 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
             float signalQuality;
 
-            if (distance <= 100D) { signalQuality = 0.9f + random.nextFloat() * 0.05f; }
-            else if (distance <= 250D) { signalQuality = 0.7f + random.nextFloat() * 0.1f; }
-            else if (distance <= 500D) { signalQuality = 0.45f + random.nextFloat() * 0.1f; }
-            else { signalQuality = 0.2f + random.nextFloat() * 0.1f; }
+            if (distance <= 100D) { signalQuality = 0.95f; }
+            else if (distance <= 250D) { signalQuality = 0.75f; }
+            else if (distance <= 500D) { signalQuality = 0.50f; }
+            else { signalQuality = 0.25f; }
             
-            short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
+            short[] playerFinalAudio = processRadioAudio(rawAudio, signalQuality, senderState);
             
             Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
             World receiverWorld = receiverPlayer.getWorld();
@@ -298,10 +232,50 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             }
         }
     }
+    
+    // --- ПОЛНЫЕ ВЕРСИИ ВСЕХ ОСТАЛЬНЫХ МЕТОДОВ ---
+    @Nullable
+    private int[][] getIcon(String path) {
+        try {
+            Enumeration<URL> resources = WalkieTalkieVoiceChatPlugin.class.getClassLoader().getResources(path);
+            while (resources.hasMoreElements()) {
+                BufferedImage bufferedImage = ImageIO.read(resources.nextElement().openStream());
+                if (bufferedImage.getWidth() != 16) { continue; }
+                if (bufferedImage.getHeight() != 16) { continue; }
+                int[][] image = new int[16][16];
+                for (int x = 0; x < bufferedImage.getWidth(); x++) {
+                    for (int y = 0; y < bufferedImage.getHeight(); y++) {
+                        image[x][y] = bufferedImage.getRGB(x, y);
+                    }
+                }
+                return image;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
 
-    private int getCanal(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); }
-    private int getRange(ItemStack stack) { WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem()); return item.getRange(); }
-    private boolean isWalkieTalkieActivate(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); }
-    private boolean isWalkieTalkieMute(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE); }
-    private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) { World senderWorld = senderPlayer.getWorld(); World receiverWorld = receiverPlayer.getWorld(); return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange); }
+    private int getCanal(ItemStack stack) { 
+        return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); 
+    }
+
+    private int getRange(ItemStack stack) { 
+        WalkieTalkieItem item = (WalkieTalkieItem) Objects.requireNonNull(stack.getItem()); 
+        return item.getRange(); 
+    }
+
+    private boolean isWalkieTalkieActivate(ItemStack stack) { 
+        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); 
+    }
+
+    private boolean isWalkieTalkieMute(ItemStack stack) { 
+        return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE); 
+    }
+
+    private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) { 
+        World senderWorld = senderPlayer.getWorld(); 
+        World receiverWorld = receiverPlayer.getWorld(); 
+        return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange); 
+    }
 }
