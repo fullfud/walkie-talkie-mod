@@ -70,12 +70,12 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
             transmissionStates.put(senderId, new AudioProcessingState());
-            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
+            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 0.0f);
 
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                receiver.getWorld().playSound(receiver, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
+                receiver.getWorld().playSound(receiver, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 0.0f);
             }
             activeTransmissions.put(senderId, receiverIds);
         }
@@ -87,11 +87,11 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         transmissionStates.remove(senderId);
 
         if (receiverIds != null && sender.getServer() != null) {
-            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
+            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 1.0f);
             receiverIds.forEach(uuid -> {
                 ServerPlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
                 if (player != null) {
-                    player.getWorld().playSound(player, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
+                    player.getWorld().playSound(player, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 1.0f);
                 }
             });
         }
@@ -102,7 +102,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
-        // ИСПРАВЛЕНО: Используем getTicks() для совместимости
         if (server.getTicks() % 4 != 0) {
             return;
         }
@@ -116,7 +115,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
             short[] noiseSample = generateRadioNoise(960, 0.15f, senderState);
 
-            // Логика для отправки шума другим игрокам
             Set<ServerPlayerEntity> receivers = findValidReceivers(sender);
             for (ServerPlayerEntity receiver : receivers) {
                 Position receiverPosition = api.createPosition(receiver.getX(), receiver.getY(), receiver.getZ());
@@ -128,8 +126,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                     audioPlayer.startPlaying();
                 }
             }
-
-            // ИСПРАВЛЕНО: Логика для отправки шума на спикеры
+            
             ItemStack senderStack = Util.getWalkieTalkieInHand(sender);
             if (senderStack != null) {
                 int senderCanal = getCanal(senderStack);
@@ -165,7 +162,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
-        // ИСПРАВЛЕНО: Используем старый метод с event.cancel() для совместимости
         event.cancel();
 
         AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
