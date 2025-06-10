@@ -169,6 +169,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             short[] rawAudio = decoder.decode(opusData);
             decoder.close();
 
+            // Используем улучшенный эффект для голоса
             short[] finalAudio = applyFullRadioEffect(rawAudio, 0.9f, senderState);
 
             OpusEncoder encoder = api.createEncoder();
@@ -208,25 +209,33 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         return validReceivers;
     }
 
+    /**
+     * УЛУЧШЕННАЯ ВЕРСИЯ: Убран резкий дисторшн, изменен баланс голоса и шума для более реалистичного эффекта.
+     */
     private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
         short[] filtered = applyBandpassFilter(rawAudio, state);
         short[] compressed = applyCompression(filtered, state);
-        float distortionAmount = (1.0f - signalQuality) * 0.3f;
-        short[] distorted = addRadioDistortion(compressed, distortionAmount);
+        
+        // 1. Дисторшн полностью убран для чистого, но "радийного" звука.
+        short[] distorted = compressed; 
+
+        // 2. Генерируем шум, как и раньше.
         short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
         short[] output = new short[distorted.length];
-        float signalLevel = 0.6f + signalQuality * 0.4f;
-        float noiseLevel = (1.0f - signalQuality) * 0.4f;
+        
+        // 3. Изменен баланс: голос затухает, а шум нарастает при плохом сигнале.
+        float signalLevel = 0.2f + signalQuality * 0.8f; 
+        float noiseLevel = (1.0f - signalQuality) * 0.8f; 
         
         for (int i = 0; i < output.length; i++) {
+            // Смешиваем чистый (но обработанный) голос с шумом
             float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
             output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
         }
         return output;
     }
     
-    // ... все остальные ваши аудио-методы (applyBandpassFilter, applyCompression, и т.д.) ...
-    // Они остаются без изменений, поэтому я их скопирую как есть.
+    // ... остальные аудио-методы (applyBandpassFilter, и т.д.) без изменений ...
     
     private short[] applyBandpassFilter(short[] input, AudioProcessingState state) {
         short[] output = new short[input.length];
@@ -292,6 +301,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     }
 
     private short[] addRadioDistortion(short[] input, float amount) {
+        // Этот метод больше не используется в applyFullRadioEffect, но мы его оставляем,
+        // вдруг вы захотите вернуть немного дисторшна в будущем.
         short[] output = new short[input.length];
         for (int i = 0; i < input.length; i++) {
             float sample = input[i] / 32768.0f;
