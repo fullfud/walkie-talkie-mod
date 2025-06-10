@@ -70,12 +70,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
             transmissionStates.put(senderId, new AudioProcessingState());
-            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 0.0f);
+            // Используем "безопасные" значения для теста
+            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.9f);
 
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                receiver.getWorld().playSound(receiver, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 0.0f);
+                receiver.getWorld().playSound(receiver, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.9f);
             }
             activeTransmissions.put(senderId, receiverIds);
         }
@@ -87,11 +88,12 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         transmissionStates.remove(senderId);
 
         if (receiverIds != null && sender.getServer() != null) {
-            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 1.0f);
+            // Используем "безопасные" значения для теста
+            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.8f);
             receiverIds.forEach(uuid -> {
                 ServerPlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
                 if (player != null) {
-                    player.getWorld().playSound(player, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 99.0f, 1.0f);
+                    player.getWorld().playSound(player, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.8f);
                 }
             });
         }
@@ -126,7 +128,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                     audioPlayer.startPlaying();
                 }
             }
-            
+
             ItemStack senderStack = Util.getWalkieTalkieInHand(sender);
             if (senderStack != null) {
                 int senderCanal = getCanal(senderStack);
@@ -137,68 +139,101 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     }
 
     public void onMicPacket(MicrophonePacketEvent event) {
-        if (api == null || event.getSenderConnection() == null) return;
-        if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) return;
+        if (api == null || event.getSenderConnection() == null) {
+            return; // Выходим тихо, если API не готов
+        }
+
+        // Выводим сообщение КАЖДЫЙ раз, когда вы что-то говорите в микрофон
+        Constants.LOG.info("--- [DEBUG] onMicPacket event triggered! ---");
+
+        if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) {
+            Constants.LOG.error("[DEBUG] Failed to get senderPlayer.");
+            return;
+        }
 
         ItemStack senderItemStack = Util.getWalkieTalkieInHand(senderPlayer);
-        boolean isTransmitting = senderItemStack != null && isWalkieTalkieActivate(senderItemStack) && !isWalkieTalkieMute(senderItemStack);
+        
+        if (senderItemStack == null) {
+            Constants.LOG.warn("[DEBUG] Walkie-talkie not in hand.");
+        } else {
+            Constants.LOG.info("[DEBUG] Walkie-talkie found in hand: " + senderItemStack.getItem());
+            if (!senderItemStack.hasNbt()) {
+                Constants.LOG.warn("[DEBUG] Walkie-talkie has NO NBT data!");
+            } else {
+                boolean isActive = senderItemStack.getNbt().getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE);
+                boolean isMuted = senderItemStack.getNbt().getBoolean(WalkieTalkieItem.NBT_KEY_MUTE);
+                Constants.LOG.info("[DEBUG] NBT data: activate=" + isActive + ", mute=" + isMuted);
+            }
+        }
+        
+        boolean isActivateNBT = senderItemStack != null && isWalkieTalkieActivate(senderItemStack);
+        boolean isMuteNBT = senderItemStack != null && isWalkieTalkieMute(senderItemStack);
+
+        boolean isTransmitting = senderItemStack != null && isActivateNBT && !isMuteNBT;
         boolean wasTransmitting = activeTransmissions.containsKey(senderPlayer.getUuid());
+
+        Constants.LOG.info("[DEBUG] State check: isTransmitting=" + isTransmitting + " (ItemFound=" + (senderItemStack != null) + ", IsActive=" + isActivateNBT + ", IsNotMuted=" + !isMuteNBT + ")");
+        Constants.LOG.info("[DEBUG] State check: wasTransmitting=" + wasTransmitting);
 
         if (!isTransmitting) {
             if (wasTransmitting) {
+                Constants.LOG.info("[DEBUG] Condition met: !isTransmitting && wasTransmitting. Calling handleTransmissionEnd...");
                 handleTransmissionEnd(senderPlayer);
             }
             return;
         }
 
-        Set<ServerPlayerEntity> validReceivers = findValidReceivers(senderPlayer);
-
         if (!wasTransmitting) {
-            handleTransmissionStart(senderPlayer, validReceivers);
+            Constants.LOG.info("[DEBUG] Condition met: isTransmitting && !wasTransmitting. Calling handleTransmissionStart...");
+            handleTransmissionStart(senderPlayer, findValidReceivers(senderPlayer));
         }
 
         byte[] opusData = event.getPacket().getOpusEncodedData();
-        if (opusData.length == 0) {
-            return;
-        }
+        if (opusData.length > 0) {
+            Constants.LOG.info("[DEBUG] Voice data detected (length=" + opusData.length + "). Processing audio...");
+            
+            event.cancel();
 
-        event.cancel();
-
-        AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
-        if (senderState == null) return;
-
-        OpusDecoder decoder = api.createDecoder();
-        short[] rawAudio = decoder.decode(opusData);
-        decoder.close();
-
-        short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
-        SpeakerBlockEntity.getSpeakersActivatedInRange(getCanal(senderItemStack), senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
-                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
-
-        for (ServerPlayerEntity receiverPlayer : validReceivers) {
-            double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
-            float signalQuality;
-
-            if (distance <= 100D) {
-                signalQuality = 0.9f + random.nextFloat() * 0.05f;
-            } else if (distance <= 250D) {
-                signalQuality = 0.7f + random.nextFloat() * 0.1f;
-            } else if (distance <= 500D) {
-                signalQuality = 0.45f + random.nextFloat() * 0.1f;
-            } else {
-                signalQuality = 0.2f + random.nextFloat() * 0.1f;
+            AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
+            if (senderState == null) {
+                Constants.LOG.error("[DEBUG] AudioProcessingState is null, cannot process audio.");
+                return;
             }
 
-            short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
+            OpusDecoder decoder = api.createDecoder();
+            short[] rawAudio = decoder.decode(opusData);
+            decoder.close();
 
-            Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
-            World receiverWorld = receiverPlayer.getWorld();
-            LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverWorld), receiverPosition);
+            short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
+            SpeakerBlockEntity.getSpeakersActivatedInRange(getCanal(senderItemStack), senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
+                    .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
+            
+            Set<ServerPlayerEntity> validReceivers = findValidReceivers(senderPlayer);
+            for (ServerPlayerEntity receiverPlayer : validReceivers) {
+                double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
+                float signalQuality;
 
-            if (channel != null) {
-                channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
-                AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), playerFinalAudio);
-                player.startPlaying();
+                if (distance <= 100D) {
+                    signalQuality = 0.9f + random.nextFloat() * 0.05f;
+                } else if (distance <= 250D) {
+                    signalQuality = 0.7f + random.nextFloat() * 0.1f;
+                } else if (distance <= 500D) {
+                    signalQuality = 0.45f + random.nextFloat() * 0.1f;
+                } else {
+                    signalQuality = 0.2f + random.nextFloat() * 0.1f;
+                }
+
+                short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
+
+                Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
+                World receiverWorld = receiverPlayer.getWorld();
+                LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverWorld), receiverPosition);
+
+                if (channel != null) {
+                    channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
+                    AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), playerFinalAudio);
+                    player.startPlaying();
+                }
             }
         }
     }
@@ -302,7 +337,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             state.noiseFilterHistory[0] = state.noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
             noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
         }
-        return noise;
+        return output;
     }
 
     @Nullable
