@@ -1,10 +1,12 @@
 {
-  "walkietalkie_on": {
+  "item.walkietalkie.on": {
+    "subtitle": "subtitles.walkietalkie.walkietalkie_on",
     "sounds": [
       "walkietalkie:walkietalkie_on"
     ]
   },
-  "walkietalkie_off": {
+  "item.walkietalkie.off": {
+    "subtitle": "subtitles.walkietalkie.walkietalkie_off",
     "sounds": [
       "walkietalkie:walkietalkie_off"
     ]
