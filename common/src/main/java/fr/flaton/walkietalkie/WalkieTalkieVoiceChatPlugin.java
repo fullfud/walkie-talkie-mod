@@ -14,7 +14,7 @@ import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import de.maxhenkel.voicechat.api.opus.OpusEncoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
-import fr.flaton.walkietalkie.item.WalkieTalkieItem;
+import fr.flaton.walkie_talkie.item.WalkieTalkieItem;
 import fr.flaton.walkietalkie.ModSoundEvents;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -23,6 +23,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -32,6 +34,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
+
+    // ИСПРАВЛЕНО: Добавляем логгер прямо сюда
+    public static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public final static String SPEAKER_CATEGORY = "speakers";
     private static final Random random = new Random();
@@ -69,8 +74,9 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     private void handleTransmissionStart(ServerPlayerEntity sender, Set<ServerPlayerEntity> receivers) {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
+            // ИСПРАВЛЕНО: Добавляем лог перед проигрыванием звука
+            LOGGER.info("[DEBUG] Playing ON sound for {}", sender.getName().getString());
             transmissionStates.put(senderId, new AudioProcessingState());
-            // Используем "безопасные" значения для теста
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.9f);
 
             Set<UUID> receiverIds = new HashSet<>();
@@ -88,7 +94,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         transmissionStates.remove(senderId);
 
         if (receiverIds != null && sender.getServer() != null) {
-            // Используем "безопасные" значения для теста
+            // ИСПРАВЛЕНО: Добавляем лог перед проигрыванием звука
+            LOGGER.info("[DEBUG] Playing OFF sound for {}", sender.getName().getString());
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.8f);
             receiverIds.forEach(uuid -> {
                 ServerPlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
@@ -140,29 +147,28 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     public void onMicPacket(MicrophonePacketEvent event) {
         if (api == null || event.getSenderConnection() == null) {
-            return; // Выходим тихо, если API не готов
+            return;
         }
 
-        // Выводим сообщение КАЖДЫЙ раз, когда вы что-то говорите в микрофон
-        Constants.LOG.info("--- [DEBUG] onMicPacket event triggered! ---");
+        LOGGER.info("--- [DEBUG] onMicPacket event triggered! ---");
 
         if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) {
-            Constants.LOG.error("[DEBUG] Failed to get senderPlayer.");
+            LOGGER.error("[DEBUG] Failed to get senderPlayer.");
             return;
         }
 
         ItemStack senderItemStack = Util.getWalkieTalkieInHand(senderPlayer);
         
         if (senderItemStack == null) {
-            Constants.LOG.warn("[DEBUG] Walkie-talkie not in hand.");
+            LOGGER.warn("[DEBUG] Walkie-talkie not in hand.");
         } else {
-            Constants.LOG.info("[DEBUG] Walkie-talkie found in hand: " + senderItemStack.getItem());
+            LOGGER.info("[DEBUG] Walkie-talkie found in hand: " + senderItemStack.getItem());
             if (!senderItemStack.hasNbt()) {
-                Constants.LOG.warn("[DEBUG] Walkie-talkie has NO NBT data!");
+                LOGGER.warn("[DEBUG] Walkie-talkie has NO NBT data!");
             } else {
                 boolean isActive = senderItemStack.getNbt().getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE);
                 boolean isMuted = senderItemStack.getNbt().getBoolean(WalkieTalkieItem.NBT_KEY_MUTE);
-                Constants.LOG.info("[DEBUG] NBT data: activate=" + isActive + ", mute=" + isMuted);
+                LOGGER.info("[DEBUG] NBT data: activate=" + isActive + ", mute=" + isMuted);
             }
         }
         
@@ -172,31 +178,31 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         boolean isTransmitting = senderItemStack != null && isActivateNBT && !isMuteNBT;
         boolean wasTransmitting = activeTransmissions.containsKey(senderPlayer.getUuid());
 
-        Constants.LOG.info("[DEBUG] State check: isTransmitting=" + isTransmitting + " (ItemFound=" + (senderItemStack != null) + ", IsActive=" + isActivateNBT + ", IsNotMuted=" + !isMuteNBT + ")");
-        Constants.LOG.info("[DEBUG] State check: wasTransmitting=" + wasTransmitting);
+        LOGGER.info("[DEBUG] State check: isTransmitting=" + isTransmitting + " (ItemFound=" + (senderItemStack != null) + ", IsActive=" + isActivateNBT + ", IsNotMuted=" + !isMuteNBT + ")");
+        LOGGER.info("[DEBUG] State check: wasTransmitting=" + wasTransmitting);
 
         if (!isTransmitting) {
             if (wasTransmitting) {
-                Constants.LOG.info("[DEBUG] Condition met: !isTransmitting && wasTransmitting. Calling handleTransmissionEnd...");
+                LOGGER.info("[DEBUG] Condition met: !isTransmitting && wasTransmitting. Calling handleTransmissionEnd...");
                 handleTransmissionEnd(senderPlayer);
             }
             return;
         }
 
         if (!wasTransmitting) {
-            Constants.LOG.info("[DEBUG] Condition met: isTransmitting && !wasTransmitting. Calling handleTransmissionStart...");
+            LOGGER.info("[DEBUG] Condition met: isTransmitting && !wasTransmitting. Calling handleTransmissionStart...");
             handleTransmissionStart(senderPlayer, findValidReceivers(senderPlayer));
         }
 
         byte[] opusData = event.getPacket().getOpusEncodedData();
         if (opusData.length > 0) {
-            Constants.LOG.info("[DEBUG] Voice data detected (length=" + opusData.length + "). Processing audio...");
+            LOGGER.info("[DEBUG] Voice data detected (length=" + opusData.length + "). Processing audio...");
             
             event.cancel();
 
             AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
             if (senderState == null) {
-                Constants.LOG.error("[DEBUG] AudioProcessingState is null, cannot process audio.");
+                LOGGER.error("[DEBUG] AudioProcessingState is null, cannot process audio.");
                 return;
             }
 
@@ -337,7 +343,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             state.noiseFilterHistory[0] = state.noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
             noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
         }
-        return output;
+        // ИСПРАВЛЕНО: Возвращаем правильную переменную
+        return noise;
     }
 
     @Nullable
