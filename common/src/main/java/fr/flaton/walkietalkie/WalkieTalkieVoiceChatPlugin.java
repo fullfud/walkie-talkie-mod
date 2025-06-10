@@ -14,7 +14,8 @@ import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import de.maxhenkel.voicechat.api.opus.OpusEncoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
-import fr.flaton.walkie_talkie.item.WalkieTalkieItem;
+// ИСПРАВЛЕНО: Убрано ошибочное нижнее подчеркивание
+import fr.flaton.walkietalkie.item.WalkieTalkieItem;
 import fr.flaton.walkietalkie.ModSoundEvents;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -35,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
-    // ИСПРАВЛЕНО: Добавляем логгер прямо сюда
     public static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public final static String SPEAKER_CATEGORY = "speakers";
@@ -74,7 +74,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     private void handleTransmissionStart(ServerPlayerEntity sender, Set<ServerPlayerEntity> receivers) {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
-            // ИСПРАВЛЕНО: Добавляем лог перед проигрыванием звука
             LOGGER.info("[DEBUG] Playing ON sound for {}", sender.getName().getString());
             transmissionStates.put(senderId, new AudioProcessingState());
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.9f);
@@ -94,7 +93,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         transmissionStates.remove(senderId);
 
         if (receiverIds != null && sender.getServer() != null) {
-            // ИСПРАВЛЕНО: Добавляем лог перед проигрыванием звука
             LOGGER.info("[DEBUG] Playing OFF sound for {}", sender.getName().getString());
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 1.0f, 0.8f);
             receiverIds.forEach(uuid -> {
@@ -343,7 +341,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             state.noiseFilterHistory[0] = state.noiseFilterHistory[0] * 0.9f + noiseSample * 0.1f;
             noise[i] = (short)(state.noiseFilterHistory[0] * intensity * 3000);
         }
-        // ИСПРАВЛЕНО: Возвращаем правильную переменную
         return noise;
     }
 
