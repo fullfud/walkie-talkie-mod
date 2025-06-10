@@ -10,11 +10,13 @@ public class ModSoundEvents {
 
     public static final DeferredRegister<SoundEvent> SOUND_EVENTS = DeferredRegister.create(Constants.MOD_ID, RegistryKeys.SOUND_EVENT);
 
-    public static final Identifier ON_ID = new Identifier(Constants.MOD_ID, "walkietalkie_on");
-    public static final RegistrySupplier<SoundEvent> ON_SOUND_EVENT = SOUND_EVENTS.register("walkietalkie_on", () -> SoundEvent.of(ON_ID));
+    // ИЗМЕНЕНО: Новое, уникальное имя для события, чтобы разорвать цикл
+    public static final Identifier ON_ID = new Identifier(Constants.MOD_ID, "item.walkietalkie.on");
+    public static final RegistrySupplier<SoundEvent> ON_SOUND_EVENT = SOUND_EVENTS.register("item.walkietalkie.on", () -> SoundEvent.of(ON_ID));
 
-    public static final Identifier OFF_ID = new Identifier(Constants.MOD_ID, "walkietalkie_off");
-    public static final RegistrySupplier<SoundEvent> OFF_SOUND_EVENT = SOUND_EVENTS.register("walkietalkie_off", () -> SoundEvent.of(OFF_ID));
+    // ИЗМЕНЕНО: Новое, уникальное имя для события, чтобы разорвать цикл
+    public static final Identifier OFF_ID = new Identifier(Constants.MOD_ID, "item.walkietalkie.off");
+    public static final RegistrySupplier<SoundEvent> OFF_SOUND_EVENT = SOUND_EVENTS.register("item.walkietalkie.off", () -> SoundEvent.of(OFF_ID));
 
     public static void register() {
         SOUND_EVENTS.register();

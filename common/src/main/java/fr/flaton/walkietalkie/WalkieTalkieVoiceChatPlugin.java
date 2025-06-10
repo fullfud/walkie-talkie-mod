@@ -21,7 +21,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents; // <-- ДОБАВЛЕН ИМПОРТ ВАНИЛЬНЫХ ЗВУКОВ
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -75,13 +74,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
             transmissionStates.put(senderId, new AudioProcessingState());
-            // ТЕСТ: Проигрываем стандартный ванильный звук щелчка кнопки
-            sender.getWorld().playSound(sender, sender.getBlockPos(), SoundEvents.UI_BUTTON_CLICK, SoundCategory.PLAYERS, 1.0f, 1.0f);
+            // ИСПОЛЬЗУЕМ ВАШИ ПАРАМЕТРЫ, ТЕПЕРЬ ОНИ ДОЛЖНЫ РАБОТАТЬ
+            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT, SoundCategory.PLAYERS, 99.0f, 0.0f);
 
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                receiver.getWorld().playSound(receiver, receiver.getBlockPos(), SoundEvents.UI_BUTTON_CLICK, SoundCategory.PLAYERS, 1.0f, 1.0f);
+                receiver.getWorld().playSound(receiver, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT, SoundCategory.PLAYERS, 99.0f, 0.0f);
             }
             activeTransmissions.put(senderId, receiverIds);
         }
@@ -93,12 +92,12 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         transmissionStates.remove(senderId);
 
         if (receiverIds != null && sender.getServer() != null) {
-            // ТЕСТ: Проигрываем стандартный ванильный звук щелчка кнопки с другим питчем
-            sender.getWorld().playSound(sender, sender.getBlockPos(), SoundEvents.UI_BUTTON_CLICK, SoundCategory.PLAYERS, 1.0f, 0.8f);
+            // ИСПОЛЬЗУЕМ ВАШИ ПАРАМЕТРЫ, ТЕПЕРЬ ОНИ ДОЛЖНЫ РАБОТАТЬ
+            sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT, SoundCategory.PLAYERS, 99.0f, 1.0f);
             receiverIds.forEach(uuid -> {
                 ServerPlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
                 if (player != null) {
-                    player.getWorld().playSound(player, player.getBlockPos(), SoundEvents.UI_BUTTON_CLICK, SoundCategory.PLAYERS, 1.0f, 0.8f);
+                    player.getWorld().playSound(player, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT, SoundCategory.PLAYERS, 99.0f, 1.0f);
                 }
             });
         }
