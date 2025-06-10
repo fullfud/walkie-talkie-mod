@@ -11,15 +11,20 @@ import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
 import de.maxhenkel.voicechat.api.opus.OpusDecoder;
+import de.maxhenkel.voicechat.api.opus.OpusEncoder;
 import fr.flaton.walkietalkie.block.entity.SpeakerBlockEntity;
 import fr.flaton.walkietalkie.config.ModConfig;
 import fr.flaton.walkietalkie.item.WalkieTalkieItem;
 import fr.flaton.walkietalkie.ModSoundEvents;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.world.World;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
@@ -35,22 +40,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     private static final Random random = new Random();
     private static final int SAMPLE_RATE = 48000;
 
-    // Твоя система отслеживания передач
     private final Map<UUID, Set<UUID>> activeTransmissions = new ConcurrentHashMap<>();
     private final Map<UUID, AudioProcessingState> transmissionStates = new ConcurrentHashMap<>();
 
     @Nullable
     public static VoicechatServerApi api;
-
-    // Твой класс для хранения состояния фильтров
-    private static class AudioProcessingState {
-        float[] highpassHistory = new float[2];
-        float[] lowpassHistory = new float[2];
-        float[] noiseFilterHistory = new float[2];
-        float envelope = 0.0f;
-        float pink = 0;
-        float brown = 0;
-    }
+    @Nullable
+    private MinecraftServer server;
 
     @Override
     public String getPluginId() {
@@ -65,6 +61,8 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
     private void onServerStarted(VoicechatServerStartedEvent event) {
         api = event.getVoicechat();
+        this.server = event.getServer();
+
         VolumeCategory speakers = api.volumeCategoryBuilder()
                 .setId(SPEAKER_CATEGORY)
                 .setName("Speakers")
@@ -72,70 +70,163 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 .setIcon(getIcon("assets/walkietalkie/textures/block/speaker.png"))
                 .build();
         api.registerVolumeCategory(speakers);
+
+        // Регистрируем класс для прослушивания событий Forge (включая тики)
+        MinecraftForge.EVENT_BUS.register(this);
     }
 
-    // Твоя обработка начала передачи
     private void handleTransmissionStart(ServerPlayerEntity sender, Set<ServerPlayerEntity> receivers) {
         UUID senderId = sender.getUuid();
         if (!activeTransmissions.containsKey(senderId)) {
             transmissionStates.put(senderId, new AudioProcessingState());
-            // ИСПРАВЛЕНО: Звук проигрывается для конкретного отправителя
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
-            
+
             Set<UUID> receiverIds = new HashSet<>();
             for (ServerPlayerEntity receiver : receivers) {
                 receiverIds.add(receiver.getUuid());
-                // ИСПРАВЛЕНО: Звук проигрывается для конкретного получателя
                 receiver.getWorld().playSound(receiver, receiver.getBlockPos(), ModSoundEvents.ON_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
             }
             activeTransmissions.put(senderId, receiverIds);
         }
     }
 
-    // Твоя обработка конца передачи
     private void handleTransmissionEnd(ServerPlayerEntity sender) {
         UUID senderId = sender.getUuid();
         Set<UUID> receiverIds = activeTransmissions.remove(senderId);
         transmissionStates.remove(senderId);
 
         if (receiverIds != null) {
-            // ИСПРАВЛЕНО: Звук проигрывается для конкретного отправителя
             sender.getWorld().playSound(sender, sender.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
             receiverIds.forEach(uuid -> {
-                // Используем sender.getServer() для доступа к списку игроков, так как это надежно
                 ServerPlayerEntity player = sender.getServer().getPlayerManager().getPlayer(uuid);
                 if (player != null) {
-                    // ИСПРАВЛЕНО: Звук проигрывается для конкретного получателя
                     player.getWorld().playSound(player, player.getBlockPos(), ModSoundEvents.OFF_SOUND_EVENT.get(), SoundCategory.PLAYERS, 0.5f, 1.0f);
                 }
             });
         }
     }
 
-    @Nullable
-    private int[][] getIcon(String path) {
-        try {
-            Enumeration<URL> resources = WalkieTalkieVoiceChatPlugin.class.getClassLoader().getResources(path);
-            while (resources.hasMoreElements()) {
-                BufferedImage bufferedImage = ImageIO.read(resources.nextElement().openStream());
-                if (bufferedImage.getWidth() != 16) { continue; }
-                if (bufferedImage.getHeight() != 16) { continue; }
-                int[][] image = new int[16][16];
-                for (int x = 0; x < bufferedImage.getWidth(); x++) {
-                    for (int y = 0; y < bufferedImage.getHeight(); y++) {
-                        image[x][y] = bufferedImage.getRGB(x, y);
-                    }
-                }
-                return image;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    @SubscribeEvent
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || api == null || activeTransmissions.isEmpty() || server == null) {
+            return;
         }
-        return null;
+
+        if (server.getTickManager().getTickCount() % 4 != 0) {
+            return;
+        }
+
+        for (UUID senderId : activeTransmissions.keySet()) {
+            ServerPlayerEntity sender = server.getPlayerManager().getPlayer(senderId);
+            if (sender == null) continue;
+
+            Set<ServerPlayerEntity> receivers = findValidReceivers(sender);
+            if (receivers.isEmpty()) continue;
+
+            AudioProcessingState senderState = transmissionStates.get(senderId);
+            if (senderState == null) continue;
+
+            short[] noiseSample = generateRadioNoise(960, 0.15f, senderState);
+
+            for (ServerPlayerEntity receiver : receivers) {
+                Position receiverPosition = api.createPosition(receiver.getX(), receiver.getY(), receiver.getZ());
+                LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiver.getWorld()), receiverPosition);
+
+                if (channel != null) {
+                    channel.setFilter(player -> player.getUuid().equals(receiver.getUuid()));
+                    AudioPlayer audioPlayer = api.createAudioPlayer(channel, api.createEncoder(), noiseSample);
+                    audioPlayer.startPlaying();
+                }
+            }
+        }
     }
     
-    // --- ВСЕ ТВОИ ОРИГИНАЛЬНЫЕ МЕТОДЫ ОБРАБОТКИ ЗВУКА ---
-    // Они используют объект 'state' для безопасной работы с несколькими игроками
+    public void onMicPacket(MicrophonePacketEvent event) {
+        if (api == null || event.getSenderConnection() == null) return;
+        if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) return;
+
+        ItemStack senderItemStack = Util.getWalkieTalkieInHand(senderPlayer);
+        boolean isTransmitting = senderItemStack != null && isWalkieTalkieActivate(senderItemStack) && !isWalkieTalkieMute(senderItemStack);
+        boolean wasTransmitting = activeTransmissions.containsKey(senderPlayer.getUuid());
+
+        if (!isTransmitting) {
+            if (wasTransmitting) {
+                handleTransmissionEnd(senderPlayer);
+            }
+            return;
+        }
+
+        if (!wasTransmitting) {
+            handleTransmissionStart(senderPlayer, findValidReceivers(senderPlayer));
+        }
+
+        byte[] opusData = event.getPacket().getOpusEncodedData();
+        if (opusData.length > 0) {
+            AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
+            if (senderState == null) return;
+
+            OpusDecoder decoder = api.createDecoder();
+            short[] rawAudio = decoder.decode(opusData);
+            decoder.close();
+
+            short[] finalAudio = applyFullRadioEffect(rawAudio, 0.9f, senderState);
+
+            OpusEncoder encoder = api.createEncoder();
+            byte[] modifiedOpusData = encoder.encode(finalAudio);
+            encoder.close();
+
+            de.maxhenkel.voicechat.api.packets.MicrophonePacket newPacket = api.microphonePacketBuilder()
+                    .setOpusEncodedData(modifiedOpusData)
+                    .build();
+
+            event.setPacket(newPacket);
+
+            SpeakerBlockEntity.getSpeakersActivatedInRange(getCanal(senderItemStack), senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
+                    .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, finalAudio, senderPlayer));
+        }
+    }
+
+    // --- ВСПОМОГАТЕЛЬНЫЕ И АУДИО МЕТОДЫ ---
+
+    private Set<ServerPlayerEntity> findValidReceivers(ServerPlayerEntity sender) {
+        ItemStack senderStack = Util.getWalkieTalkieInHand(sender);
+        if (senderStack == null || sender.getServer() == null) {
+            return Collections.emptySet();
+        }
+        int senderCanal = getCanal(senderStack);
+
+        Set<ServerPlayerEntity> validReceivers = new HashSet<>();
+        for (PlayerEntity p : sender.getServer().getPlayerManager().getPlayerList()) {
+            if (p instanceof ServerPlayerEntity receiverPlayer && !receiverPlayer.getUuid().equals(sender.getUuid())) {
+                if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(sender.getWorld().getDimension())) continue;
+                ItemStack receiverStack = Util.getWalkieTalkieActivated(receiverPlayer);
+                if (receiverStack == null) continue;
+                if (!canBroadcastToReceiver(sender, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) continue;
+                validReceivers.add(receiverPlayer);
+            }
+        }
+        return validReceivers;
+    }
+
+    private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
+        short[] filtered = applyBandpassFilter(rawAudio, state);
+        short[] compressed = applyCompression(filtered, state);
+        float distortionAmount = (1.0f - signalQuality) * 0.3f;
+        short[] distorted = addRadioDistortion(compressed, distortionAmount);
+        short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
+        short[] output = new short[distorted.length];
+        float signalLevel = 0.6f + signalQuality * 0.4f;
+        float noiseLevel = (1.0f - signalQuality) * 0.4f;
+        
+        for (int i = 0; i < output.length; i++) {
+            float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
+            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
+        }
+        return output;
+    }
+    
+    // ... все остальные ваши аудио-методы (applyBandpassFilter, applyCompression, и т.д.) ...
+    // Они остаются без изменений, поэтому я их скопирую как есть.
     
     private short[] applyBandpassFilter(short[] input, AudioProcessingState state) {
         short[] output = new short[input.length];
@@ -214,96 +305,27 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         }
         return output;
     }
-    
-    private short[] applyFullRadioEffect(short[] rawAudio, float signalQuality, AudioProcessingState state) {
-        short[] filtered = applyBandpassFilter(rawAudio, state);
-        short[] compressed = applyCompression(filtered, state);
-        float distortionAmount = (1.0f - signalQuality) * 0.3f;
-        short[] distorted = addRadioDistortion(compressed, distortionAmount);
-        short[] noise = generateRadioNoise(distorted.length, 1.0f, state);
-        short[] output = new short[distorted.length];
-        float signalLevel = 0.6f + signalQuality * 0.4f;
-        float noiseLevel = (1.0f - signalQuality) * 0.4f;
-        
-        for (int i = 0; i < output.length; i++) {
-            float mixed = distorted[i] * signalLevel + noise[i] * noiseLevel;
-            output[i] = (short)Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
-        }
-        return output;
-    }
-    
-    public void onMicPacket(MicrophonePacketEvent event) {
-        if (api == null || event.getSenderConnection() == null) return;
-        if (!(event.getSenderConnection().getPlayer().getPlayer() instanceof ServerPlayerEntity senderPlayer)) return;
 
-        ItemStack senderItemStack = Util.getWalkieTalkieInHand(senderPlayer);
-        boolean isTransmitting = senderItemStack != null && isWalkieTalkieActivate(senderItemStack) && !isWalkieTalkieMute(senderItemStack);
-        boolean wasTransmitting = activeTransmissions.containsKey(senderPlayer.getUuid());
-
-        if (!isTransmitting) {
-            if (wasTransmitting) {
-                handleTransmissionEnd(senderPlayer);
+    @Nullable
+    private int[][] getIcon(String path) {
+        try {
+            Enumeration<URL> resources = WalkieTalkieVoiceChatPlugin.class.getClassLoader().getResources(path);
+            while (resources.hasMoreElements()) {
+                BufferedImage bufferedImage = ImageIO.read(resources.nextElement().openStream());
+                if (bufferedImage.getWidth() != 16) { continue; }
+                if (bufferedImage.getHeight() != 16) { continue; }
+                int[][] image = new int[16][16];
+                for (int x = 0; x < bufferedImage.getWidth(); x++) {
+                    for (int y = 0; y < bufferedImage.getHeight(); y++) {
+                        image[x][y] = bufferedImage.getRGB(x, y);
+                    }
+                }
+                return image;
             }
-            return;
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        
-        byte[] opusData = event.getPacket().getOpusEncodedData();
-        if (opusData.length == 0) {
-            if (wasTransmitting) {
-                handleTransmissionEnd(senderPlayer);
-            }
-            return;
-        }
-
-        event.cancel();
-
-        OpusDecoder decoder = api.createDecoder();
-        short[] rawAudio = decoder.decode(opusData);
-        decoder.close();
-        
-        int senderCanal = getCanal(senderItemStack);
-        
-        Set<ServerPlayerEntity> validReceivers = new HashSet<>();
-        for (PlayerEntity p : Objects.requireNonNull(senderPlayer.getServer()).getPlayerManager().getPlayerList()) {
-            if (p instanceof ServerPlayerEntity receiverPlayer && !receiverPlayer.getUuid().equals(senderPlayer.getUuid())) {
-                 if (!ModConfig.crossDimensionsEnabled && !receiverPlayer.getWorld().getDimension().equals(senderPlayer.getWorld().getDimension())) continue;
-                 ItemStack receiverStack = Util.getWalkieTalkieActivated(receiverPlayer);
-                 if (receiverStack == null) continue;
-                 if (!canBroadcastToReceiver(senderPlayer, receiverPlayer, getRange(receiverStack)) || getCanal(receiverStack) != senderCanal) continue;
-                 validReceivers.add(receiverPlayer);
-            }
-        }
-        
-        handleTransmissionStart(senderPlayer, validReceivers);
-        
-        AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
-        if (senderState == null) return;
-
-        short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
-        SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
-                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
-
-        for (ServerPlayerEntity receiverPlayer : validReceivers) {
-            double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
-            float signalQuality;
-
-            if (distance <= 100D) { signalQuality = 0.9f + random.nextFloat() * 0.05f; }
-            else if (distance <= 250D) { signalQuality = 0.7f + random.nextFloat() * 0.1f; }
-            else if (distance <= 500D) { signalQuality = 0.45f + random.nextFloat() * 0.1f; }
-            else { signalQuality = 0.2f + random.nextFloat() * 0.1f; }
-            
-            short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
-            
-            Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
-            World receiverWorld = receiverPlayer.getWorld();
-            LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverWorld), receiverPosition);
-
-            if (channel != null) {
-                channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
-                AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), playerFinalAudio);
-                player.startPlaying();
-            }
-        }
+        return null;
     }
 
     private int getCanal(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getInt(WalkieTalkieItem.NBT_KEY_CANAL); }
@@ -311,4 +333,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
     private boolean isWalkieTalkieActivate(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_ACTIVATE); }
     private boolean isWalkieTalkieMute(ItemStack stack) { return Objects.requireNonNull(stack.getNbt()).getBoolean(WalkieTalkieItem.NBT_KEY_MUTE); }
     private boolean canBroadcastToReceiver(PlayerEntity senderPlayer, PlayerEntity receiverPlayer, int receiverRange) { World senderWorld = senderPlayer.getWorld(); World receiverWorld = receiverPlayer.getWorld(); return Util.canBroadcastToReceiver(senderWorld, receiverWorld, senderPlayer.getPos(), receiverPlayer.getPos(), receiverRange); }
+
+    private static class AudioProcessingState {
+        float[] highpassHistory = new float[2];
+        float[] lowpassHistory = new float[2];
+        float[] noiseFilterHistory = new float[2];
+        float envelope = 0.0f;
+        float pink = 0;
+        float brown = 0;
+    }
 }
