@@ -1,5 +1,6 @@
 package fr.flaton.walkietalkie;
 
+import dev.architectury.event.events.common.TickEvent;
 import fr.flaton.walkietalkie.block.ModBlocks;
 import fr.flaton.walkietalkie.block.entity.ModBlockEntities;
 import fr.flaton.walkietalkie.item.ModItemGroup;
@@ -9,16 +10,22 @@ import fr.flaton.walkietalkie.screen.ModScreenHandlers;
 
 public class WalkieTalkie {
 
-	public static void init() {
-		ModBlocks.register();
-		ModItems.register();
-		ModItemGroup.register();
+    public static final WalkieTalkieVoiceChatPlugin VOICE_CHAT_PLUGIN = new WalkieTalkieVoiceChatPlugin();
 
-		ModBlockEntities.register();
-		ModScreenHandlers.register();
+    public static void init() {
+        ModBlocks.register();
+        ModItems.register();
+        ModItemGroup.register();
 
-		ModMessages.registerC2SPackets();
+        ModBlockEntities.register();
+        ModScreenHandlers.register();
 
-		ModSoundEvents.register();
-	}
+        ModMessages.registerC2SPackets();
+
+        ModSoundEvents.register();
+
+        TickEvent.SERVER_POST.register(server -> {
+            VOICE_CHAT_PLUGIN.onServerTick(server);
+        });
+    }
 }
