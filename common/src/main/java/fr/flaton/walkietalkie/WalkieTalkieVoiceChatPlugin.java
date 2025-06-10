@@ -102,7 +102,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
-        if (server.getTickManager().getTickCount() % 4 != 0) {
+        if (server.getTicks() % 4 != 0) {
             return;
         }
 
@@ -146,33 +146,60 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
+        // Находим получателей до основной логики
+        Set<ServerPlayerEntity> validReceivers = findValidReceivers(senderPlayer);
+
         if (!wasTransmitting) {
-            handleTransmissionStart(senderPlayer, findValidReceivers(senderPlayer));
+            handleTransmissionStart(senderPlayer, validReceivers);
         }
 
         byte[] opusData = event.getPacket().getOpusEncodedData();
-        if (opusData.length > 0) {
-            AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
-            if (senderState == null) return;
+        if (opusData.length == 0) {
+            return; // Если голоса нет, просто выходим, шум поддерживается тиком
+        }
 
-            OpusDecoder decoder = api.createDecoder();
-            short[] rawAudio = decoder.decode(opusData);
-            decoder.close();
+        // Отменяем отправку оригинального пакета
+        event.cancel();
 
-            short[] finalAudio = applyFullRadioEffect(rawAudio, 0.9f, senderState);
+        AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
+        if (senderState == null) return;
 
-            OpusEncoder encoder = api.createEncoder();
-            byte[] modifiedOpusData = encoder.encode(finalAudio);
-            encoder.close();
+        OpusDecoder decoder = api.createDecoder();
+        short[] rawAudio = decoder.decode(opusData);
+        decoder.close();
 
-            de.maxhenkel.voicechat.api.packets.MicrophonePacket newPacket = api.microphonePacketBuilder()
-                    .setOpusEncodedData(modifiedOpusData)
-                    .build();
+        // Логика для стационарных динамиков
+        short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
+        SpeakerBlockEntity.getSpeakersActivatedInRange(getCanal(senderItemStack), senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
+                .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
 
-            event.setPacket(newPacket);
+        // Вручную отправляем обработанный звук каждому получателю
+        for (ServerPlayerEntity receiverPlayer : validReceivers) {
+            // Рассчитываем качество сигнала в зависимости от расстояния
+            double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
+            float signalQuality;
 
-            SpeakerBlockEntity.getSpeakersActivatedInRange(getCanal(senderItemStack), senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
-                    .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, finalAudio, senderPlayer));
+            if (distance <= 100D) {
+                signalQuality = 0.9f + random.nextFloat() * 0.05f;
+            } else if (distance <= 250D) {
+                signalQuality = 0.7f + random.nextFloat() * 0.1f;
+            } else if (distance <= 500D) {
+                signalQuality = 0.45f + random.nextFloat() * 0.1f;
+            } else {
+                signalQuality = 0.2f + random.nextFloat() * 0.1f;
+            }
+
+            short[] playerFinalAudio = applyFullRadioEffect(rawAudio, signalQuality, senderState);
+
+            Position receiverPosition = api.createPosition(receiverPlayer.getX(), receiverPlayer.getY(), receiverPlayer.getZ());
+            World receiverWorld = receiverPlayer.getWorld();
+            LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiverWorld), receiverPosition);
+
+            if (channel != null) {
+                channel.setFilter(player -> player.getUuid().equals(receiverPlayer.getUuid()));
+                AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), playerFinalAudio);
+                player.startPlaying();
+            }
         }
     }
 
