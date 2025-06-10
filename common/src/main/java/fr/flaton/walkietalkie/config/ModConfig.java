@@ -30,7 +30,7 @@ public class ModConfig {
     public static int speakerDistance = 32;
     public static boolean voiceDuplication = false;
 
-    // --- НОВЫЕ НАСТРОЙКИ ЗВУКОВЫХ ЭФФЕКТОВ ---
+    // --- Sound Effect Settings ---
     public static boolean enablePttSounds = true;
     public static boolean enablePassiveNoise = true;
     public static float passiveNoiseVolume = 0.15f;
@@ -112,8 +112,6 @@ public class ModConfig {
             Constants.LOG.error("Failed to write config file!", e);
         }
     }
-
-    // --- Helper methods for cleaner code ---
 
     private void addIntOption(StringBuilder sb, String key, int value, String comment) {
         if (!comment.isEmpty()) sb.append("# ").append(comment).append("\n");
