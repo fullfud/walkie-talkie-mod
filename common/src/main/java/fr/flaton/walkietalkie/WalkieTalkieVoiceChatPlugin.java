@@ -102,6 +102,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
+        // ИСПРАВЛЕНО: Используем getTicks() для совместимости
         if (server.getTicks() % 4 != 0) {
             return;
         }
@@ -110,14 +111,13 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             ServerPlayerEntity sender = server.getPlayerManager().getPlayer(senderId);
             if (sender == null) continue;
 
-            Set<ServerPlayerEntity> receivers = findValidReceivers(sender);
-            if (receivers.isEmpty()) continue;
-
             AudioProcessingState senderState = transmissionStates.get(senderId);
             if (senderState == null) continue;
 
             short[] noiseSample = generateRadioNoise(960, 0.15f, senderState);
 
+            // Логика для отправки шума другим игрокам
+            Set<ServerPlayerEntity> receivers = findValidReceivers(sender);
             for (ServerPlayerEntity receiver : receivers) {
                 Position receiverPosition = api.createPosition(receiver.getX(), receiver.getY(), receiver.getZ());
                 LocationalAudioChannel channel = api.createLocationalAudioChannel(UUID.randomUUID(), api.fromServerLevel(receiver.getWorld()), receiverPosition);
@@ -127,6 +127,14 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                     AudioPlayer audioPlayer = api.createAudioPlayer(channel, api.createEncoder(), noiseSample);
                     audioPlayer.startPlaying();
                 }
+            }
+
+            // ИСПРАВЛЕНО: Логика для отправки шума на спикеры
+            ItemStack senderStack = Util.getWalkieTalkieInHand(sender);
+            if (senderStack != null) {
+                int senderCanal = getCanal(senderStack);
+                SpeakerBlockEntity.getSpeakersActivatedInRange(senderCanal, sender.getWorld(), sender.getPos(), getRange(senderStack))
+                        .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, noiseSample, sender));
             }
         }
     }
@@ -146,7 +154,6 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
             return;
         }
 
-        // Находим получателей до основной логики
         Set<ServerPlayerEntity> validReceivers = findValidReceivers(senderPlayer);
 
         if (!wasTransmitting) {
@@ -155,10 +162,10 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
         byte[] opusData = event.getPacket().getOpusEncodedData();
         if (opusData.length == 0) {
-            return; // Если голоса нет, просто выходим, шум поддерживается тиком
+            return;
         }
 
-        // Отменяем отправку оригинального пакета
+        // ИСПРАВЛЕНО: Используем старый метод с event.cancel() для совместимости
         event.cancel();
 
         AudioProcessingState senderState = transmissionStates.get(senderPlayer.getUuid());
@@ -168,14 +175,11 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
         short[] rawAudio = decoder.decode(opusData);
         decoder.close();
 
-        // Логика для стационарных динамиков
         short[] speakerFinalAudio = applyFullRadioEffect(rawAudio, 0.85f, senderState);
         SpeakerBlockEntity.getSpeakersActivatedInRange(getCanal(senderItemStack), senderPlayer.getWorld(), senderPlayer.getPos(), getRange(senderItemStack))
                 .forEach(speakerBlockEntity -> speakerBlockEntity.playSound(api, speakerFinalAudio, senderPlayer));
 
-        // Вручную отправляем обработанный звук каждому получателю
         for (ServerPlayerEntity receiverPlayer : validReceivers) {
-            // Рассчитываем качество сигнала в зависимости от расстояния
             double distance = senderPlayer.getPos().distanceTo(receiverPlayer.getPos());
             float signalQuality;
 
