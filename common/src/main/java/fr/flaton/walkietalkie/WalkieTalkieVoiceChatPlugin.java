@@ -23,8 +23,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger; // Keep this import if you still use Logger in other parts of the file, otherwise remove
-import org.slf4j.LoggerFactory; // Keep this import if you still use LoggerFactory in other parts of the file, otherwise remove
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -35,9 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ForgeVoicechatPlugin
 public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
 
-    // *** REMOVE THIS LINE:
-    // public static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    // You will now use Constants.LOGGER from the Constants class
+    public static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public final static String SPEAKER_CATEGORY = "speakers";
     private static final Random random = new Random();
@@ -315,8 +313,7 @@ public class WalkieTalkieVoiceChatPlugin implements VoicechatPlugin {
                 return image;
             }
         } catch (Exception e) {
-            // *** CHANGE HERE: Use Constants.LOGGER for consistency
-            Constants.LOGGER.error("Failed to load icon for path: {}", path, e); // Using parameterized logging for better performance
+            e.printStackTrace();
         }
         return null;
     }
