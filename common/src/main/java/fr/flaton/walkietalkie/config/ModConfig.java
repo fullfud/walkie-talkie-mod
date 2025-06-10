@@ -1,6 +1,6 @@
 package fr.flaton.walkietalkie.config;
 
-import fr.flaton.walkietalkie.Constants;
+import fr.flaton.walkietalkie.Constants; // Keep this import
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -47,7 +47,8 @@ public class ModConfig {
             try (FileInputStream stream = new FileInputStream(configFile)) {
                 properties.load(stream);
             } catch (IOException e) {
-                Constants.LOG.error("Failed to load config file!", e);
+                // *** CHANGE HERE: Use Constants.LOGGER ***
+                Constants.LOGGER.error("Failed to load config file!", e);
             }
         }
 
@@ -55,7 +56,7 @@ public class ModConfig {
         maxCanal = getInt(properties, "max-canal", maxCanal);
         crossDimensionsEnabled = getBoolean(properties, "cross-dimensions-enabled", crossDimensionsEnabled);
         applyDimensionScale = getBoolean(properties, "apply-dimension-scale", applyDimensionScale);
-        
+
         // --- Walkie-Talkie Tiers ---
         woodenWalkieTalkieRange = getInt(properties, "wooden-walkie-talkie-range", woodenWalkieTalkieRange);
         stoneWalkieTalkieRange = getInt(properties, "stone-walkie-talkie-range", stoneWalkieTalkieRange);
@@ -63,7 +64,7 @@ public class ModConfig {
         goldenWalkieTalkieRange = getInt(properties, "golden-walkie-talkie-range", goldenWalkieTalkieRange);
         diamondWalkieTalkieRange = getInt(properties, "diamond-walkie-talkie-range", diamondWalkieTalkieRange);
         netheriteWalkieTalkieRange = getInt(properties, "netherite-walkie-talkie-range", netheriteWalkieTalkieRange);
-        
+
         // --- Speaker Settings ---
         speakerDistance = getInt(properties, "speaker-distance", speakerDistance);
         voiceDuplication = getBoolean(properties, "voice-duplication", voiceDuplication);
@@ -109,7 +110,8 @@ public class ModConfig {
         try (FileWriter writer = new FileWriter(configFile)) {
             writer.write(sb.toString());
         } catch (IOException e) {
-            Constants.LOG.error("Failed to write config file!", e);
+                // *** CHANGE HERE: Use Constants.LOGGER ***
+            Constants.LOGGER.error("Failed to write config file!", e);
         }
     }
 
@@ -139,7 +141,7 @@ public class ModConfig {
     private boolean getBoolean(Properties props, String key, boolean defaultValue) {
         return Boolean.parseBoolean(props.getProperty(key, String.valueOf(defaultValue)));
     }
-    
+
     private float getFloat(Properties props, String key, float defaultValue) {
         try {
             return Float.parseFloat(props.getProperty(key, String.valueOf(defaultValue)));
